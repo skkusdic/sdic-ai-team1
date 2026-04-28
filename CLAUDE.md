@@ -1,20 +1,95 @@
-# Team [N] — SDIC AI 기업 분석 에이전트
+# SDIC AI 기업 분석 에이전트 — Team [N]
 
-## Team
-- Pipeline Lead: [이름] → graph.py 담당
-- Data Lead: [이름] → data.py 담당
-- UI Lead: [이름] → app.py 담당
-- Report Lead: [이름] → report.py 담당
-  (팀원 3명인 팀: Pipeline Lead가 report.py도 담당)
+> **🇰🇷 필수: 이 프로젝트의 모든 응답과 설명은 반드시 한국어로 해주세요.**
+> 코드 변수명·함수명은 영어 snake_case, UI 텍스트와 모든 설명은 한국어.
 
-## 1인 1파일 원칙
-자기 파일 외에는 절대 수정하지 마세요. 충돌의 99%는 여기서 발생합니다.
+---
+
+## 처음 시작하는 분들께 — 이 문장들을 채팅창에 그대로 입력하세요
+
+**📌 첫 번째 — 프로젝트 현황 파악:**
+```
+이 프로젝트가 어떻게 구성되어 있는지 한국어로 설명해줘. 내 역할은 [역할명]이고 담당 파일은 [파일명]이야.
+```
+
+**📌 두 번째 — 첫 commit (이름, 역할 바꿔서 입력):**
+```
+[이름].txt 파일을 만들고 "역할: [역할], 팀: Team [N]" 이라고 적은 다음 'week1: [이름] 온보딩' 메시지로 commit하고 push해줘.
+```
+
+**📌 앱 실행:**
+```
+requirements.txt 설치하고 streamlit run app.py 실행해줘.
+```
+
+**📌 막혔을 때:**
+```
+[에러 메시지 붙여넣기] 이 에러 해결해줘.
+```
+
+---
+
+## 팀 구성 (세션에서 이름 채워넣기)
+
+| 역할 | 이름 | 담당 파일 |
+|---|---|---|
+| Pipeline Lead | [이름] | graph.py |
+| Data Lead | [이름] | data.py |
+| UI Lead | [이름] | app.py |
+| Report Lead | [이름] | report.py |
+
+> 3인 팀의 경우 Pipeline Lead가 report.py도 담당.
 
 ## 분석 대상 기업
-팀에서 합의한 기업명: [기업명]
+팀에서 합의한 기업: [기업명]
 
-## 실행 방법
-1. VS Code에서 이 폴더 열기
-2. .env 파일 생성 후 API 키 입력 (.env.example 참고)
-3. 터미널: pip install -r requirements.txt
-4. 터미널: streamlit run app.py
+---
+
+## 프로젝트 구조
+
+**데이터 흐름:**
+```
+기업명 입력 (app.py)
+  → LangGraph Supervisor (graph.py)
+    → Data Agent (data.py): DART-FSS API → SQLite
+    → Report Agent (report.py): RAG + Claude API → PDF
+  → 결과 출력 (app.py)
+```
+
+**파일별 담당:**
+- `app.py` — Streamlit UI (UI Lead)
+- `graph.py` — LangGraph Supervisor 파이프라인 (Pipeline Lead)
+- `data.py` — DART API + SQLite + Text2SQL (Data Lead)
+- `report.py` — RAG 인덱스 + fpdf2 PDF 생성 (Report Lead)
+
+## 기술 스택
+- Python 3.11, LangGraph, Claude API (claude-haiku-4-5)
+- DART-FSS API, OpenAI Embeddings, NumPy (코사인 유사도)
+- SQLite, fpdf2, Streamlit
+
+## 환경 변수 (.env 파일에만, 절대 코드에 직접 X)
+- `DART_API_KEY` — https://opendart.fss.or.kr
+- `ANTHROPIC_API_KEY` — https://console.anthropic.com
+
+---
+
+## 절대 규칙
+
+- **1인 1파일:** 자기 담당 파일 외 절대 수정 금지. 충돌의 99%는 여기서 발생
+- **API 키 하드코딩 금지:** .env 파일에서만 불러오기
+- **.env를 git에 커밋 금지**
+- **모델 고정:** claude-haiku-4-5만 사용. Sonnet/Opus 호출 금지
+- **UI 텍스트:** 전부 한국어
+
+---
+
+## 6주 일정
+
+| 주차 | 목표 |
+|---|---|
+| 1주차 | 환경 설정 + 첫 commit + 팀 역할 배정 |
+| 2주차 | data.py — DART API 연결 + SQLite 저장 |
+| 3주차 | graph.py — LangGraph Supervisor 아키텍처 |
+| 4주차 | report.py — RAG + fpdf2 PDF 생성 |
+| 5주차 | app.py — Plotly 시각화 + LLM 평가 |
+| 6주차 | Streamlit Cloud 배포 + 팀 데모 |
