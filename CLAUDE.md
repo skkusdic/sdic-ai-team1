@@ -34,7 +34,7 @@ requirements.txt 설치하고 streamlit run app.py 실행해줘.
 | 역할 | 이름 | 담당 파일 |
 |---|---|---|
 | Pipeline Lead | 이수빈 | graph.py |
-| Data Lead | [이름] | data.py |
+| Data Lead | 김나은 | data.py |
 | UI Lead | 권지연 | app.py |
 | Report Lead | [이름] | report.py |
 
