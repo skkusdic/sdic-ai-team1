@@ -36,7 +36,7 @@ requirements.txt 설치하고 streamlit run app.py 실행해줘.
 | Pipeline Lead | 이수빈 | graph.py |
 | Data Lead | 김나은 | data.py |
 | UI Lead | 권지연 | app.py |
-| Report Lead | [이름] | report.py |
+| Report Lead | 성한동 | report.py |
 
 > 3인 팀의 경우 Pipeline Lead가 report.py도 담당.
 
