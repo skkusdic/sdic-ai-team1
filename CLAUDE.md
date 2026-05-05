@@ -46,7 +46,7 @@ requirements.txt 설치하고 streamlit run app.py 실행해줘.
 > 3인 팀의 경우 Pipeline Lead가 report.py도 담당.
 
 ## 분석 대상 기업
-팀에서 합의한 기업: [기업명]
+팀에서 합의한 기업: APR (에이피알)
 
 ---
 
