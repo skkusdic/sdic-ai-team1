@@ -22,6 +22,11 @@
 requirements.txt 설치하고 streamlit run app.py 실행해줘.
 ```
 
+**📌 파일 올릴 때 (push):**
+```
+내 [파일명] GitHub에 올려줘. push 전에 git pull --rebase origin main 먼저 실행해줘. 커밋 메시지는 "week[N]: [역할] 완성"으로 해줘.
+```
+
 **📌 막혔을 때:**
 ```
 [에러 메시지 붙여넣기] 이 에러 해결해줘.
@@ -76,6 +81,7 @@ requirements.txt 설치하고 streamlit run app.py 실행해줘.
 ## 절대 규칙
 
 - **1인 1파일:** 자기 담당 파일 외 절대 수정 금지. 충돌의 99%는 여기서 발생
+- **Push 전 반드시 rebase pull:** `git pull --rebase origin main` 먼저, 그 다음 push. 머지 커밋 방지
 - **API 키 하드코딩 금지:** .env 파일에서만 불러오기
 - **.env를 git에 커밋 금지**
 - **모델 고정:** claude-haiku-4-5만 사용. Sonnet/Opus 호출 금지
