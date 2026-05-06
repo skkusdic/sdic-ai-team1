@@ -1,0 +1,48 @@
+name: Model Lock Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Forbid non-haiku models + direct Anthropic imports
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Forbid non-haiku Claude model strings
+        run: |
+          set -e
+          forbidden=$(grep -rEn 'claude-(sonnet|opus|3|haiku-3)' \
+                       --include='*.py' \
+                       --include='*.md' \
+                       --exclude-dir='.git' \
+                       --exclude-dir='.github' \
+                       --exclude-dir='_before_merge' \
+                       . || true)
+          if [ -n "$forbidden" ]; then
+            echo "::error::Non-haiku Claude model detected. Only claude-haiku-4-5 is allowed (학회 비용 정책)."
+            echo "$forbidden"
+            exit 1
+          fi
+          echo "OK: only claude-haiku-4-5 references found."
+
+      - name: Forbid direct Anthropic SDK imports outside claude_client.py
+        run: |
+          set -e
+          direct=$(grep -rEn '^[[:space:]]*(from anthropic|import anthropic)' \
+                    --include='*.py' \
+                    --exclude='claude_client.py' \
+                    --exclude-dir='.git' \
+                    --exclude-dir='.github' \
+                    --exclude-dir='_before_merge' \
+                    . || true)
+          if [ -n "$direct" ]; then
+            echo "::error::Direct Anthropic SDK import detected. Use claude_client.py only."
+            echo "$direct"
+            exit 1
+          fi
+          echo "OK: no direct anthropic imports outside claude_client.py."

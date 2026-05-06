@@ -84,7 +84,7 @@ requirements.txt 설치하고 streamlit run app.py 실행해줘.
 - **Push 전 반드시 rebase pull:** `git pull --rebase origin main` 먼저, 그 다음 push. 머지 커밋 방지
 - **API 키 하드코딩 금지:** .env 파일에서만 불러오기
 - **.env를 git에 커밋 금지**
-- **모델 고정:** claude-haiku-4-5만 사용. Sonnet/Opus 호출 금지
+- **모델 잠금 (학회 비용 정책):** Anthropic 호출은 반드시 `claude_client.py`의 `ask()` / `ask_messages()`만 사용. 직접 `from anthropic import ...` / `import anthropic` 금지. 모델 문자열은 `claude_client.py`에 하드코딩되어 있어 변경 불가. Sonnet/Opus/Claude-3/이전 Haiku 절대 금지 — **CI(`.github/workflows/model-check.yml`)가 push마다 자동 검증**합니다. 위반 시 빌드 실패.
 - **UI 텍스트:** 전부 한국어
 
 ---
