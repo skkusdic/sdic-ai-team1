@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from data import get_financials
+from graph import pipeline
 
 st.set_page_config(page_title="AI 재무 컨설팅 어시스턴트", layout="wide")
 
@@ -19,9 +19,15 @@ if st.button("분석 시작"):
     if not company.strip():
         st.warning("기업명을 입력해주세요")
     else:
-        with st.spinner(f"{company} DART 데이터 불러오는 중..."):
-            data = get_financials(company.strip())
+        with st.spinner(f"{company} 분석 중..."):
+            state = pipeline.invoke({
+                "company": company.strip(),
+                "data": {},
+                "result": "",
+                "analysis": "",
+            })
 
+        data = state["data"]
         if not data:
             st.error(f"'{company}' 데이터를 찾을 수 없습니다. 기업명을 확인해주세요.")
         else:
@@ -39,4 +45,8 @@ if st.button("분석 시작"):
 
             st.subheader(f"{company} 연도별 재무 현황")
             st.dataframe(df, use_container_width=True)
+
+            st.subheader("Claude 분석")
+            st.write(state["analysis"])
+
             st.success("분석 완료!")
