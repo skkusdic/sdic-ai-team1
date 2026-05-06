@@ -1,5 +1,6 @@
 ﻿from typing import TypedDict
 from langgraph.graph import StateGraph, END
+from data import get_financials
 
 
 class State(TypedDict):
@@ -8,19 +9,17 @@ class State(TypedDict):
 
 
 def load_data(state: State) -> State:
-    state["data"] = {
-        "매출액": 302_231_000_000_000,
-        "영업이익": 32_726_000_000_000,
-        "순이익": 26_085_000_000_000,
-    }
+    state["data"] = get_financials("에이피알")
     return state
 
 
 def process_data(state: State) -> State:
     data = state["data"]
+    latest_year = max(data.keys())
+    d = data[latest_year]
     msg = (
-        f"분석 준비 완료: 매출액 {data['매출액']:,}원, "
-        f"영업이익 {data['영업이익']:,}원"
+        f"분석 준비 완료: 매출액 {d['매출액']:,}원, "
+        f"영업이익 {d['영업이익']:,}원"
     )
     print(msg)
     state["result"] = msg
