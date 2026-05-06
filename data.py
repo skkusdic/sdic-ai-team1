@@ -1,41 +1,71 @@
 import os
+import dart_fss as dart
 from dotenv import load_dotenv
 
 load_dotenv()
-DART_API_KEY = os.getenv("DART_API_KEY")
+dart.set_api_key(os.getenv("DART_API_KEY"))
+dart.enable_spinner(False)
 
-# TODO: dart-fss 연동
-# import dart_fss as dart
-# dart.set_api_key(DART_API_KEY)
 
-MOCK_DATA = {
-    "에이피알": {
-        2022: {"매출액": 456_100, "영업이익": 31_200, "순이익": 24_100},
-        2023: {"매출액": 689_200, "영업이익": 58_700, "순이익": 45_300},
-        2024: {"매출액": 921_400, "영업이익": 89_100, "순이익": 71_200},
+def get_corp_code(company_name: str) -> str:
+    corp_list = dart.get_corp_list()
+    results = corp_list.find_by_corp_name(company_name, exactly=True)
+    if not results:
+        raise ValueError(f"기업을 찾을 수 없습니다: {company_name}")
+    return results[0].corp_code
+
+
+def get_financial_statements(corp_code: str):
+    return dart.extract(
+        corp_code=corp_code,
+        bgn_de="20220101",
+        report_tp="annual",
+        separate=True,
+    )
+
+
+def _parse_dart_fs(fs) -> dict:
+    df = fs["cis"]
+    if df is None:
+        df = fs["is"]
+    if df is None:
+        raise ValueError("손익계산서 데이터를 찾을 수 없습니다.")
+
+    label_col = [c for c in df.columns if "label_ko" in str(c)][0]
+    year_cols = {
+        str(c[0])[:4]: c
+        for c in df.columns
+        if isinstance(c, tuple) and len(str(c[0])) >= 4 and str(c[0])[:4].isdigit()
     }
-}
+
+    target_labels = {"매출액", "영업이익", "당기순이익"}
+    label_map = {"당기순이익": "순이익"}
+
+    result = {}
+    for _, row in df.iterrows():
+        label = str(row[label_col]).strip()
+        if label not in target_labels:
+            continue
+        key = label_map.get(label, label)
+        for year_str, col in year_cols.items():
+            year = int(year_str)
+            if year not in result:
+                result[year] = {}
+            val = row[col]
+            result[year][key] = int(val // 1_000_000) if val == val else 0
+
+    return dict(sorted(result.items()))
 
 
 def get_financials(company_name: str) -> dict:
-    # TODO: dart-fss 연동 — mock 블록을 실제 API 호출로 교체
-    # corp_code = get_corp_code(company_name)
-    # rows = get_financial_statements(corp_code)
-    # return _parse_dart_rows(rows)
-    return MOCK_DATA.get(company_name, {})
+    corp_code = get_corp_code(company_name)
+    fs = get_financial_statements(corp_code)
+    return _parse_dart_fs(fs)
 
 
 if __name__ == "__main__":
     data = get_financials("에이피알")
-
     if not data:
         print("데이터를 찾을 수 없습니다.")
     else:
-        print("\n에이피알 연도별 재무 현황 (단위: 백만 원)")
-        print("-" * 50)
-        print(f"{'연도':^6} | {'매출액':>12} | {'영업이익':>10} | {'순이익':>10}")
-        print("-" * 50)
-        for year in sorted(data):
-            d = data[year]
-            print(f"{year:^6} | {d['매출액']:>12,} | {d['영업이익']:>10,} | {d['순이익']:>10,}")
-        print("-" * 50)
+        print(data)
