@@ -1,4 +1,4 @@
-﻿from typing import TypedDict
+from typing import TypedDict
 from langgraph.graph import StateGraph, END
 from data import get_financials
 from claude_client import ask
@@ -26,7 +26,7 @@ def process_data(state: State) -> State:
     prompt = (
         f"{state['company']} 재무 데이터:\n{summary}\n\n"
         "위 데이터를 바탕으로 재무 상태를 한국어로 3~5문장으로 분석해줘. "
-        "매출 추세, 수익성, 주목할 점을 포함해줘."
+        "매출 추세, 수익성, 영업이익률을 포함해줘."
     )
     state["analysis"] = ask(prompt)
     state["result"] = "분석 완료"
