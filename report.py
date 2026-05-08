@@ -43,11 +43,8 @@ def _format_report(data: dict) -> str:
 
 
 if __name__ == "__main__":
-    mock_financials = {
-        2022: {"매출액": 302_000_000, "영업이익": 43_000_000, "순이익": 55_000_000},
-        2023: {"매출액": 258_000_000, "영업이익":  6_000_000, "순이익": 15_000_000},
-        2024: {"매출액": 300_000_000, "영업이익": 32_000_000, "순이익": 34_000_000},
-    }
+    from data import get_financials
+    financials = get_financials("에이피알")
     mock_analysis = "테스트용 분석 텍스트입니다."
-    path = generate_report("삼성전자", mock_financials, mock_analysis)
+    path = generate_report("에이피알", financials, mock_analysis)
     print(f"PDF 생성 완료: {path}")
