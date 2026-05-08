@@ -1,4 +1,5 @@
 import os
+import base64
 import streamlit as st
 import pandas as pd
 from graph import pipeline
@@ -7,47 +8,93 @@ st.set_page_config(page_title="AI 재무 컨설팅 어시스턴트", layout="wid
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
 
 html, body, [class*="css"], .stApp {
     font-family: 'Noto Sans KR', sans-serif;
-    background-color: #dcedc8 !important;
-    color: #000000 !important;
+    background-color: #ffffff !important;
+    color: #1a1a1a !important;
 }
 
 [data-testid="stAppViewContainer"] {
-    background-color: #dcedc8 !important;
+    background-color: #ffffff !important;
 }
 
 [data-testid="stSidebar"] {
-    background-color: #c5e1a5 !important;
+    background-color: #fafafa !important;
+    border-right: 1px solid #eeeeee !important;
 }
 
-h1, h2, h3, h4, h5, h6,
-.stTitle, .stSubheader, .stHeader,
+h1, h2, h3, h4, h5, h6 {
+    color: #1a1a1a !important;
+    font-weight: 500 !important;
+    letter-spacing: -0.02em !important;
+}
+
 .stMarkdown, .stText, .stWrite,
 label, .stTextInput label,
 .stDataFrame, .stAlert,
 .stSidebar, .stSidebar * {
-    color: #000000 !important;
+    color: #1a1a1a !important;
+}
+
+.stTextInput > div > div > input {
+    border: 1px solid #e0e0e0 !important;
+    border-radius: 6px !important;
+    padding: 10px 14px !important;
+    font-size: 15px !important;
+    background-color: #ffffff !important;
+    color: #1a1a1a !important;
+    transition: border-color 0.2s ease !important;
+}
+
+.stTextInput > div > div > input:focus {
+    border-color: #1a1a1a !important;
+    box-shadow: none !important;
 }
 
 .stButton > button {
-    color: #000000 !important;
-    border-color: #558b2f !important;
-    background-color: transparent !important;
-    transition: background-color 0.3s ease;
+    color: #ffffff !important;
+    border: none !important;
+    background-color: #2e7d32 !important;
+    border-radius: 6px !important;
+    padding: 10px 28px !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.02em !important;
+    transition: background-color 0.2s ease !important;
 }
 
 .stButton > button:hover {
-    background-color: #aed581 !important;
+    background-color: #1b5e20 !important;
 }
 
-/* 표 셀 가운데 정렬 */
 [data-testid="stDataFrame"] td,
 [data-testid="stDataFrame"] th {
     text-align: center !important;
-    justify-content: center !important;
+}
+
+hr {
+    border: none !important;
+    border-top: 1px solid #eeeeee !important;
+    margin: 12px 0 !important;
+}
+
+h2, h3, [data-testid="stSubheader"] {
+    font-size: 1.25rem !important;
+    font-weight: 500 !important;
+}
+
+.logo-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.logo-divider {
+    width: 1px;
+    height: 36px;
+    background-color: #dddddd;
 }
 
 .fade-section {
@@ -60,58 +107,40 @@ label, .stTextInput label,
 st.markdown("""
 <script>
 (function() {
+    const BLUR_MAX = 10;
+    const OPACITY_MIN = 0.1;
+    const TRANSLATE_MAX = 20;
+
+    function getRatio(el) {
+        const rect = el.getBoundingClientRect();
+        const viewH = window.innerHeight;
+        const elCenter = rect.top + rect.height / 2;
+        const distance = Math.abs(elCenter - viewH / 2);
+        return Math.max(0, Math.min(1, 1 - distance / (viewH * 0.65)));
+    }
+
+    function applyAll() {
+        document.querySelectorAll('.fade-section').forEach(el => {
+            const r = getRatio(el);
+            el.style.opacity = OPACITY_MIN + (1 - OPACITY_MIN) * r;
+            el.style.filter  = `blur(${BLUR_MAX * (1 - r)}px)`;
+            el.style.transform = `translateY(${TRANSLATE_MAX * (1 - r)}px)`;
+        });
+    }
+
     function init() {
         const sections = document.querySelectorAll('.fade-section');
         if (!sections.length) { setTimeout(init, 400); return; }
 
-        // 페이지 전체 높이 기준으로 위치에 따라 초기 흐림 정도 결정
-        const pageHeight = document.body.scrollHeight || 1000;
+        applyAll();
 
-        sections.forEach(el => {
-            const top = el.getBoundingClientRect().top + window.scrollY;
-            const depthRatio = Math.min(top / pageHeight, 1); // 0(위) ~ 1(아래)
-            const maxBlur = 10;
-            const minOpacity = 0.1;
+        // 동적으로 추가되는 결과 섹션도 감지
+        const root = window.parent.document.querySelector('[data-testid="stAppViewContainer"]')
+                  || window.parent.document.body;
+        new MutationObserver(applyAll).observe(root, { childList: true, subtree: true });
 
-            const initBlur = depthRatio * maxBlur;
-            const initOpacity = 1 - depthRatio * (1 - minOpacity);
-            const initTranslate = depthRatio * 20;
-
-            el.style.opacity = initOpacity;
-            el.style.filter = `blur(${initBlur}px)`;
-            el.style.transform = `translateY(${initTranslate}px)`;
-            el.dataset.initBlur = initBlur;
-            el.dataset.initOpacity = initOpacity;
-            el.dataset.initTranslate = initTranslate;
-        });
-
-        function onScroll() {
-            const viewH = window.innerHeight;
-            const viewCenter = viewH / 2;
-
-            sections.forEach(el => {
-                const rect = el.getBoundingClientRect();
-                const elCenter = rect.top + rect.height / 2;
-                const distance = Math.abs(elCenter - viewCenter);
-                const maxDist = viewH * 0.65;
-                // 중앙에 가까울수록 ratio=1, 멀수록 ratio=0
-                const ratio = Math.max(0, Math.min(1, 1 - distance / maxDist));
-
-                const initBlur = parseFloat(el.dataset.initBlur || 0);
-                const initOpacity = parseFloat(el.dataset.initOpacity || 1);
-                const initTranslate = parseFloat(el.dataset.initTranslate || 0);
-
-                el.style.opacity = initOpacity + (1 - initOpacity) * ratio;
-                el.style.filter = `blur(${initBlur * (1 - ratio)}px)`;
-                el.style.transform = `translateY(${initTranslate * (1 - ratio)}px)`;
-            });
-        }
-
-        const scrollEl = window.parent.document.querySelector('[data-testid="stAppViewContainer"]')
-                       || window.parent.document.body;
-        scrollEl.addEventListener('scroll', onScroll, { passive: true });
-        window.addEventListener('scroll', onScroll, { passive: true });
-        onScroll();
+        root.addEventListener('scroll', applyAll, { passive: true });
+        window.addEventListener('scroll', applyAll, { passive: true });
     }
 
     setTimeout(init, 900);
@@ -119,31 +148,54 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 상단: 타이틀(좌) + 로고(우) — 타이틀은 항상 선명
 col_title, col_logo = st.columns([5, 1])
 with col_title:
-    st.markdown('<h1 style="opacity:1; filter:none;">AI 재무 컨설팅 어시스턴트</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 style="opacity:1; filter:none; font-size:3.2rem; font-weight:500; margin-bottom:0;">AI 재무 컨설팅 어시스턴트</h1>', unsafe_allow_html=True)
 with col_logo:
-    logo_path = os.path.join(os.path.dirname(__file__), "skku_logo.png")
-    if os.path.exists(logo_path):
-        st.image(logo_path, width=180)
+    skku_path = os.path.join(os.path.dirname(__file__), "skku.png")
+    sdic_path = os.path.join(os.path.dirname(__file__), "skku_logo.png")
+    skku_exists = os.path.exists(skku_path)
+    sdic_exists = os.path.exists(sdic_path)
+
+    def img_to_base64(path):
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+
+    if skku_exists and sdic_exists:
+        skku_b64 = img_to_base64(skku_path)
+        sdic_b64 = img_to_base64(sdic_path)
+        st.markdown(f"""
+        <div class="logo-row" style="justify-content:flex-end;">
+            <img src="data:image/png;base64,{skku_b64}" style="height:88px; width:auto; object-fit:contain;">
+            <div class="logo-divider" style="height:72px;"></div>
+            <img src="data:image/png;base64,{sdic_b64}" style="height:88px; width:auto; object-fit:contain;">
+        </div>
+        """, unsafe_allow_html=True)
+    elif sdic_exists:
+        sdic_b64 = img_to_base64(sdic_path)
+        st.markdown(f"""
+        <div style="display:flex; justify-content:flex-end;">
+            <img src="data:image/png;base64,{sdic_b64}" style="height:88px; width:auto; object-fit:contain;">
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.markdown("<div style='text-align:right; font-weight:bold;'>성균관대학교</div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align:right; font-size:13px; color:#888;'>SDIC</div>", unsafe_allow_html=True)
 
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
 st.markdown("---")
 st.markdown('</div>', unsafe_allow_html=True)
 
 with st.sidebar:
-    st.header("팀 정보")
-    st.write("**팀명:** SDIC AI Team 1")
-    st.write("**분석 기업:** 에이피알")
-    st.write("**현재 주차:** 2주차")
+    st.markdown("#### 팀 정보")
+    st.markdown("**SDIC AI Team 1**")
     st.markdown("---")
-    st.write("DART API + Claude AI 기반")
+    st.markdown("분석 기업: **에이피알**")
+    st.markdown("진행 주차: **2주차**")
+    st.markdown("---")
+    st.markdown("<span style='font-size:12px; color:#888;'>DART API · Claude AI</span>", unsafe_allow_html=True)
 
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-st.markdown("#### 분석할 기업명을 입력하세요")
+st.markdown("<p style='font-size:14px; color:#555; margin-bottom:6px;'>분석할 기업명을 입력하세요</p>", unsafe_allow_html=True)
 company = st.text_input("", placeholder="예: 에이피알", label_visibility="collapsed")
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -183,9 +235,18 @@ if run:
                 ]
             ).set_index("연도")
 
+            fmt = "{:,.0f}".format
+            styled_df = df.style.format({
+                "매출액 (백만원)": fmt,
+                "영업이익 (백만원)": fmt,
+                "순이익 (백만원)": fmt,
+            }).set_properties(**{"text-align": "center"}).set_table_styles(
+                [{"selector": "th", "props": [("text-align", "center")]}]
+            )
+
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
             st.subheader(f"{company} 연도별 재무 현황")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(styled_df, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
