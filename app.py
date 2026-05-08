@@ -31,6 +31,11 @@ h1, h2, h3, h4, h5, h6 {
     letter-spacing: -0.02em !important;
 }
 
+h2, h3, [data-testid="stSubheader"] {
+    font-size: 1.25rem !important;
+    font-weight: 500 !important;
+}
+
 .stMarkdown, .stText, .stWrite,
 label, .stTextInput label,
 .stDataFrame, .stAlert,
@@ -80,11 +85,6 @@ hr {
     margin: 12px 0 !important;
 }
 
-h2, h3, [data-testid="stSubheader"] {
-    font-size: 1.25rem !important;
-    font-weight: 500 !important;
-}
-
 .logo-row {
     display: flex;
     align-items: center;
@@ -95,6 +95,20 @@ h2, h3, [data-testid="stSubheader"] {
     width: 1px;
     height: 36px;
     background-color: #dddddd;
+}
+
+.agent-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 13px;
+}
+
+.agent-icon {
+    font-size: 15px;
+    width: 18px;
+    text-align: center;
 }
 
 .fade-section {
@@ -134,7 +148,6 @@ st.markdown("""
 
         applyAll();
 
-        // 동적으로 추가되는 결과 섹션도 감지
         const root = window.parent.document.querySelector('[data-testid="stAppViewContainer"]')
                   || window.parent.document.body;
         new MutationObserver(applyAll).observe(root, { childList: true, subtree: true });
@@ -148,52 +161,72 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
+# ── 세션 상태 초기화 ──────────────────────────────────────
+if "agent_status" not in st.session_state:
+    st.session_state.agent_status = {"data": "대기", "analysis": "대기", "report": "대기"}
+if "graph_state" not in st.session_state:
+    st.session_state.graph_state = None
+
+# ── 헤더: 타이틀 + 로고 ───────────────────────────────────
 col_title, col_logo = st.columns([5, 1])
 with col_title:
-    st.markdown('<h1 style="opacity:1; filter:none; font-size:3.2rem; font-weight:500; margin-bottom:0;">AI 재무 컨설팅 어시스턴트</h1>', unsafe_allow_html=True)
+    st.markdown(
+        '<h1 style="opacity:1; filter:none; font-size:3.2rem; font-weight:500; margin-bottom:0;">'
+        'AI 재무 컨설팅 어시스턴트</h1>',
+        unsafe_allow_html=True,
+    )
 with col_logo:
     skku_path = os.path.join(os.path.dirname(__file__), "skku.png")
-    sdic_path = os.path.join(os.path.dirname(__file__), "skku_logo.png")
-    skku_exists = os.path.exists(skku_path)
-    sdic_exists = os.path.exists(sdic_path)
+    sdic_path  = os.path.join(os.path.dirname(__file__), "skku_logo.png")
 
     def img_to_base64(path):
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode()
 
-    if skku_exists and sdic_exists:
+    if os.path.exists(skku_path) and os.path.exists(sdic_path):
         skku_b64 = img_to_base64(skku_path)
-        sdic_b64 = img_to_base64(sdic_path)
+        sdic_b64  = img_to_base64(sdic_path)
         st.markdown(f"""
         <div class="logo-row" style="justify-content:flex-end;">
             <img src="data:image/png;base64,{skku_b64}" style="height:88px; width:auto; object-fit:contain;">
             <div class="logo-divider" style="height:72px;"></div>
             <img src="data:image/png;base64,{sdic_b64}" style="height:88px; width:auto; object-fit:contain;">
-        </div>
-        """, unsafe_allow_html=True)
-    elif sdic_exists:
+        </div>""", unsafe_allow_html=True)
+    elif os.path.exists(sdic_path):
         sdic_b64 = img_to_base64(sdic_path)
         st.markdown(f"""
         <div style="display:flex; justify-content:flex-end;">
             <img src="data:image/png;base64,{sdic_b64}" style="height:88px; width:auto; object-fit:contain;">
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("<div style='text-align:right; font-size:13px; color:#888;'>SDIC</div>", unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
 st.markdown("---")
 st.markdown('</div>', unsafe_allow_html=True)
 
+# ── 사이드바 ──────────────────────────────────────────────
+ICON = {"대기": "○", "실행 중": "◌", "완료": "●", "오류": "✗"}
+COLOR = {"대기": "#aaaaaa", "실행 중": "#f59e0b", "완료": "#2e7d32", "오류": "#dc2626"}
+
 with st.sidebar:
     st.markdown("#### 팀 정보")
     st.markdown("**SDIC AI Team 1**")
-    st.markdown("---")
     st.markdown("분석 기업: **에이피알**")
     st.markdown("진행 주차: **2주차**")
     st.markdown("---")
+    st.markdown("#### 에이전트 상태")
+    for key, label in [("data", "Data Agent"), ("analysis", "Analysis Agent"), ("report", "Report Agent")]:
+        s = st.session_state.agent_status[key]
+        st.markdown(
+            f'<div class="agent-status-row">'
+            f'<span class="agent-icon" style="color:{COLOR[s]};">{ICON[s]}</span>'
+            f'<span style="color:{COLOR[s]};">{label}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown("---")
     st.markdown("<span style='font-size:12px; color:#888;'>DART API · Claude AI</span>", unsafe_allow_html=True)
 
+# ── 입력 영역 ─────────────────────────────────────────────
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
 st.markdown("<p style='font-size:14px; color:#555; margin-bottom:6px;'>분석할 기업명을 입력하세요</p>", unsafe_allow_html=True)
 company = st.text_input("", placeholder="예: 에이피알", label_visibility="collapsed")
@@ -203,57 +236,90 @@ st.markdown('<div class="fade-section">', unsafe_allow_html=True)
 run = st.button("분석 시작")
 st.markdown('</div>', unsafe_allow_html=True)
 
+# ── 분석 실행 ─────────────────────────────────────────────
 if run:
     if not company.strip():
-        st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-        st.warning("기업명을 입력해주세요")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.error("기업명을 입력해주세요")
     else:
+        st.session_state.agent_status = {"data": "실행 중", "analysis": "실행 중", "report": "실행 중"}
+        st.session_state.graph_state = None
+
         with st.spinner(f"{company} 분석 중..."):
-            state = pipeline.invoke({
+            graph_state = pipeline.invoke({
+                "request": f"{company} 재무 분석해줘",
                 "company": company.strip(),
-                "data": {},
-                "result": "",
+                "next_agent": "",
+                "financials": {},
                 "analysis": "",
+                "result": "",
+                "pdf_path": "",
             })
 
-        data = state["data"]
-        if not data:
-            st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.error(f"'{company}' 데이터를 찾을 수 없습니다. 기업명을 확인해주세요.")
-            st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            df = pd.DataFrame(
-                [
-                    {
-                        "연도": year,
-                        "매출액 (백만원)": d["매출액"],
-                        "영업이익 (백만원)": d["영업이익"],
-                        "순이익 (백만원)": d["순이익"],
-                    }
-                    for year, d in sorted(data.items())
-                ]
-            ).set_index("연도")
+        st.session_state.graph_state = graph_state
 
-            fmt = "{:,.0f}".format
-            styled_df = df.style.format({
-                "매출액 (백만원)": fmt,
-                "영업이익 (백만원)": fmt,
-                "순이익 (백만원)": fmt,
-            }).set_properties(**{"text-align": "center"}).set_table_styles(
-                [{"selector": "th", "props": [("text-align", "center")]}]
-            )
+        financials = graph_state.get("financials", {})
+        analysis   = graph_state.get("analysis", "")
+        pdf_path   = graph_state.get("pdf_path", "")
 
+        st.session_state.agent_status = {
+            "data":     "완료" if financials else "오류",
+            "analysis": "완료" if analysis   else "오류",
+            "report":   "완료" if pdf_path   else "대기",
+        }
+        st.rerun()
+
+# ── 결과 표시 ─────────────────────────────────────────────
+if st.session_state.graph_state is not None:
+    graph_state = st.session_state.graph_state
+    financials  = graph_state.get("financials", {})
+    analysis    = graph_state.get("analysis", "")
+    pdf_path    = graph_state.get("pdf_path", "")
+
+    if not financials:
+        st.markdown('<div class="fade-section">', unsafe_allow_html=True)
+        st.error(graph_state.get("result", "데이터를 찾을 수 없습니다. 기업명을 확인해주세요."))
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        df = pd.DataFrame(
+            [
+                {
+                    "연도": year,
+                    "매출액 (백만원)":   d["매출액"],
+                    "영업이익 (백만원)": d["영업이익"],
+                    "순이익 (백만원)":   d["순이익"],
+                }
+                for year, d in sorted(financials.items())
+            ]
+        ).set_index("연도")
+
+        fmt = "{:,.0f}".format
+        styled_df = df.style.format({
+            "매출액 (백만원)":   fmt,
+            "영업이익 (백만원)": fmt,
+            "순이익 (백만원)":   fmt,
+        }).set_properties(**{"text-align": "center"}).set_table_styles(
+            [{"selector": "th", "props": [("text-align", "center")]}]
+        )
+
+        company_name = graph_state.get("company", "")
+
+        tab1, tab2 = st.tabs(["재무 데이터", "Claude 분석"])
+
+        with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.subheader(f"{company} 연도별 재무 현황")
+            st.subheader(f"{company_name} 연도별 재무 현황")
             st.dataframe(styled_df, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
+        with tab2:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.subheader("Claude 분석")
-            st.write(state["analysis"])
+            st.subheader(f"{company_name} 재무 분석")
+            st.write(analysis if analysis else "분석 결과가 없습니다.")
+            if pdf_path and os.path.exists(pdf_path):
+                with open(pdf_path, "rb") as f:
+                    st.download_button("PDF 다운로드", f, file_name=os.path.basename(pdf_path), mime="application/pdf")
             st.markdown('</div>', unsafe_allow_html=True)
 
-            st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.success("분석 완료!")
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="fade-section">', unsafe_allow_html=True)
+        st.success("분석 완료!")
+        st.markdown('</div>', unsafe_allow_html=True)
