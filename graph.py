@@ -2,84 +2,112 @@ from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, END
 from data import get_financials
 from claude_client import ask
+from agents.analysis_agent import analyze
+from report import generate_report
 
 
 class State(TypedDict):
+    request: str
     company: str
-    data: dict
-    summary: str
-    result: str
+    next_agent: str
+    financials: dict
     analysis: str
-    next: str
+    result: str
+    pdf_path: str
 
 
-# supervisor
 def supervisor_node(state: State) -> State:
-    if not state.get("data"):
-        print("[supervisor] → data_agent 호출")
-        return {"next": "data_agent"}
-    if not state.get("analysis"):
-        print("[supervisor] → analysis_agent 호출")
-        return {"next": "analysis_agent"}
-    print("[supervisor] → 완료")
-    return {"next": END}
+    if not state.get("financials"):
+        print("[supervisor] financials 없음 → data_agent 호출")
+        return {"next_agent": "data_agent"}
 
-
-def route(state: State) -> Literal["data_agent", "analysis_agent", "__end__"]:
-    return state["next"]
-
-
-# data_agent
-def data_agent(state: State) -> State:
-    company = state.get("company") or "에이피알"
-    data = get_financials(company)
-    summary_lines = [
-        f"{year}년: 매출 {d['매출액']:,}백만원, 영업이익 {d['영업이익']:,}백만원, 순이익 {d['순이익']:,}백만원"
-        for year, d in sorted(data.items())
-    ]
-    print(f"[data_agent] {company} 재무 데이터 로드 완료")
-    return {"data": data, "summary": "\n".join(summary_lines), "next": ""}
-
-
-# analysis_agent
-def analysis_agent(state: State) -> State:
-    company = state.get("company") or "에이피알"
     prompt = (
-        f"{company} 재무 데이터:\n{state['summary']}\n\n"
-        "위 데이터를 바탕으로 재무 상태를 한국어로 3~5문장으로 분석해줘. "
-        "매출 추세, 수익성(영업이익률·순이익률), "
-        "전년 대비 주요 변화를 포함해줘."
+        f"사용자 요청: {state.get('request', '')}\n"
+        f"현재 상태: financials=있음, analysis={'있음' if state.get('analysis') else '없음'}\n\n"
+        "다음 중 다음에 호출할 에이전트를 정확히 한 단어로만 답해줘: "
+        "data_agent / analysis_agent / report_agent"
     )
-    analysis = ask(prompt)
-    print(f"\n=== Claude 재무 분석: {company} ===")
-    print(analysis)
-    return {"result": analysis, "analysis": analysis, "next": ""}
+    decision = ask(prompt).strip().lower()
+
+    if "data" in decision:
+        next_agent = "data_agent"
+    elif "report" in decision:
+        next_agent = "report_agent"
+    else:
+        next_agent = "analysis_agent"
+
+    print(f"[supervisor] Claude 판단 → {next_agent}")
+    return {"next_agent": next_agent}
 
 
-# pipeline
+def route_supervisor(state: State) -> Literal["data_agent", "analysis_agent", "report_agent", "__end__"]:
+    return state.get("next_agent", "__end__")
+
+
+def data_agent_node(state: State) -> State:
+    company = state.get("company", "")
+    print(f"[data_agent] {company} 데이터 로드 중...")
+    financials = get_financials(company)
+    if financials:
+        print(f"[data_agent] 로드 완료: {sorted(financials.keys())}년도")
+    else:
+        print("[data_agent] 데이터 없음 → END")
+    return {"financials": financials}
+
+
+def route_data_agent(state: State) -> Literal["analysis_agent", "__end__"]:
+    if state.get("financials"):
+        return "analysis_agent"
+    return "__end__"
+
+
+def analysis_agent_node(state: State) -> State:
+    company = state.get("company", "")
+    print(f"[analysis_agent] {company} 분석 중...")
+    analysis = analyze(state["financials"])
+    print("[analysis_agent] 분석 완료")
+    return {"analysis": analysis, "result": analysis}
+
+
+def report_agent_node(state: State) -> State:
+    company = state.get("company", "")
+    print(f"[report_agent] {company} PDF 생성 중...")
+    pdf_path = generate_report(company, state.get("financials", {}), state.get("analysis", ""))
+    print(f"[report_agent] PDF 생성 완료: {pdf_path}")
+    return {"pdf_path": pdf_path}
+
+
 graph = StateGraph(State)
 graph.add_node("supervisor", supervisor_node)
-graph.add_node("data_agent", data_agent)
-graph.add_node("analysis_agent", analysis_agent)
+graph.add_node("data_agent", data_agent_node)
+graph.add_node("analysis_agent", analysis_agent_node)
+graph.add_node("report_agent", report_agent_node)
 
 graph.set_entry_point("supervisor")
-graph.add_conditional_edges("supervisor", route, {
+graph.add_conditional_edges("supervisor", route_supervisor, {
     "data_agent": "data_agent",
     "analysis_agent": "analysis_agent",
-    END: END,
+    "report_agent": "report_agent",
+    "__end__": END,
 })
-graph.add_edge("data_agent", "supervisor")
-graph.add_edge("analysis_agent", "supervisor")
+graph.add_conditional_edges("data_agent", route_data_agent, {
+    "analysis_agent": "analysis_agent",
+    "__end__": END,
+})
+graph.add_edge("analysis_agent", "report_agent")
+graph.add_edge("report_agent", END)
 
 pipeline = graph.compile()
 
 if __name__ == "__main__":
+    import pprint
     final_state = pipeline.invoke({
+        "request": "에이피알 재무 분석해줘",
         "company": "에이피알",
-        "data": {},
-        "summary": "",
-        "result": "",
+        "next_agent": "",
+        "financials": {},
         "analysis": "",
-        "next": "",
+        "result": "",
+        "pdf_path": "",
     })
-    print(final_state["analysis"])
+    pprint.pprint({k: v for k, v in final_state.items() if k != "financials"})
