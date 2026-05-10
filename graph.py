@@ -55,10 +55,15 @@ def data_agent_node(state: State) -> State:
     return {"financials": financials}
 
 
-def route_data_agent(state: State) -> Literal["analysis_agent", "__end__"]:
+def no_data_node(state: State) -> State:
+    print("[no_data] 데이터를 찾을 수 없습니다.")
+    return {"result": "데이터를 찾을 수 없습니다"}
+
+
+def route_data_agent(state: State) -> Literal["analysis_agent", "no_data"]:
     if state.get("financials"):
         return "analysis_agent"
-    return "__end__"
+    return "no_data"
 
 
 def analysis_agent_node(state: State) -> State:
@@ -80,6 +85,7 @@ def report_agent_node(state: State) -> State:
 graph = StateGraph(State)
 graph.add_node("supervisor", supervisor_node)
 graph.add_node("data_agent", data_agent_node)
+graph.add_node("no_data", no_data_node)
 graph.add_node("analysis_agent", analysis_agent_node)
 graph.add_node("report_agent", report_agent_node)
 
@@ -92,8 +98,9 @@ graph.add_conditional_edges("supervisor", route_supervisor, {
 })
 graph.add_conditional_edges("data_agent", route_data_agent, {
     "analysis_agent": "analysis_agent",
-    "__end__": END,
+    "no_data": "no_data",
 })
+graph.add_edge("no_data", END)
 graph.add_edge("analysis_agent", "report_agent")
 graph.add_edge("report_agent", END)
 
