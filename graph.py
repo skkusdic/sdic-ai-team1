@@ -1,9 +1,10 @@
+import sys
 from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, END
-from data import get_financials
 from claude_client import ask
+from agents.data_agent import run_data_agent
 from agents.analysis_agent import analyze
-from report import generate_report
+from agents.report_agent import run_report_agent
 
 
 class State(TypedDict):
@@ -45,25 +46,24 @@ def route_supervisor(state: State) -> Literal["data_agent", "analysis_agent", "r
 
 
 def data_agent_node(state: State) -> State:
-    company = state.get("company", "")
-    print(f"[data_agent] {company} 데이터 로드 중...")
-    financials = get_financials(company)
+    result = run_data_agent(state)
+    financials = result.get("financials", {})
     if financials:
         print(f"[data_agent] 로드 완료: {sorted(financials.keys())}년도")
     else:
-        print("[data_agent] 데이터 없음 → END")
+        print("[data_agent] 데이터 없음")
     return {"financials": financials}
-
-
-def no_data_node(state: State) -> State:
-    print("[no_data] 데이터를 찾을 수 없습니다.")
-    return {"result": "데이터를 찾을 수 없습니다"}
 
 
 def route_data_agent(state: State) -> Literal["analysis_agent", "no_data"]:
     if state.get("financials"):
         return "analysis_agent"
     return "no_data"
+
+
+def no_data_node(state: State) -> State:
+    print("[no_data] 데이터를 찾을 수 없습니다.")
+    return {"result": "데이터를 찾을 수 없습니다"}
 
 
 def analysis_agent_node(state: State) -> State:
@@ -75,9 +75,8 @@ def analysis_agent_node(state: State) -> State:
 
 
 def report_agent_node(state: State) -> State:
-    company = state.get("company", "")
-    print(f"[report_agent] {company} PDF 생성 중...")
-    pdf_path = generate_report(company, state.get("financials", {}), state.get("analysis", ""))
+    result = run_report_agent(state)
+    pdf_path = result.get("pdf_path", "")
     print(f"[report_agent] PDF 생성 완료: {pdf_path}")
     return {"pdf_path": pdf_path}
 
@@ -104,13 +103,14 @@ graph.add_edge("no_data", END)
 graph.add_edge("analysis_agent", "report_agent")
 graph.add_edge("report_agent", END)
 
-pipeline = graph.compile()
+app = graph.compile()
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
     import pprint
-    final_state = pipeline.invoke({
-        "request": "에이피알 재무 분석해줘",
-        "company": "에이피알",
+    final_state = app.invoke({
+        "request": "삼성전자 재무 분석해줘",
+        "company": "삼성전자",
         "next_agent": "",
         "financials": {},
         "analysis": "",
