@@ -103,12 +103,12 @@ graph.add_edge("no_data", END)
 graph.add_edge("analysis_agent", "report_agent")
 graph.add_edge("report_agent", END)
 
-app = graph.compile()
+pipeline = graph.compile()
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     import pprint
-    final_state = app.invoke({
+    final_state = pipeline.invoke({
         "request": "삼성전자 재무 분석해줘",
         "company": "삼성전자",
         "next_agent": "",
