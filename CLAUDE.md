@@ -1,7 +1,24 @@
-# SDIC AI 기업 분석 에이전트 — Team [N]
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > **🇰🇷 필수: 이 프로젝트의 모든 응답과 설명은 반드시 한국어로 해주세요.**
 > 코드 변수명·함수명은 영어 snake_case, UI 텍스트와 모든 설명은 한국어.
+
+---
+
+## 자주 쓰는 명령어
+
+```bash
+# 패키지 설치
+pip install -r requirements.txt
+
+# 앱 실행
+streamlit run app.py
+
+# data.py 단독 테스트 (재무 데이터 출력 확인)
+python data.py
+```
 
 ---
 
@@ -34,7 +51,7 @@ requirements.txt 설치하고 streamlit run app.py 실행해줘.
 
 ---
 
-## 팀 구성 (세션에서 이름 채워넣기)
+## 팀 구성
 
 | 역할 | 이름 | 담당 파일 |
 |---|---|---|
@@ -66,6 +83,40 @@ requirements.txt 설치하고 streamlit run app.py 실행해줘.
 - `graph.py` — LangGraph Supervisor 파이프라인 (Pipeline Lead)
 - `data.py` — DART API + SQLite + Text2SQL (Data Lead)
 - `report.py` — RAG 인덱스 + fpdf2 PDF 생성 (Report Lead)
+
+---
+
+## 현재 구현 상태 (2주차 기준)
+
+| 파일 | 상태 | 비고 |
+|---|---|---|
+| `app.py` | 골격 완성 | 버튼·입력창만 있음, graph.py 연결 예정 |
+| `data.py` | Mock 데이터로 동작 중 | `get_financials()` 구현됨, DART 실연동 TODO |
+| `graph.py` | 골격만 있음 | `AnalysisState` TypedDict 정의됨, 노드 연결 TODO |
+| `report.py` | 골격만 있음 | `generate_report()` 시그니처만 있음 |
+
+### 파일 간 인터페이스 계약
+
+`data.py`의 `get_financials(company: str) -> dict` 가 반환하는 구조:
+```python
+{
+    2022: {"매출액": int, "영업이익": int, "순이익": int},  # 단위: 백만 원
+    2023: {...},
+    2024: {...},
+}
+# 기업명이 없으면 빈 dict {} 반환
+```
+
+`graph.py`의 `AnalysisState` 공유 상태:
+```python
+class AnalysisState(TypedDict):
+    company: str       # 기업명
+    corp_code: str     # DART 기업 코드
+    financials: list   # 재무 데이터
+    report: str        # 생성된 리포트 텍스트
+```
+
+---
 
 ## 기술 스택
 - Python 3.11, LangGraph, Claude API (claude-haiku-4-5)
@@ -102,28 +153,9 @@ requirements.txt 설치하고 streamlit run app.py 실행해줘.
 
 ---
 
-## 에러가 났을 때 — 개선 루프
-
-에러는 시스템을 더 강하게 만들 기회입니다. 두려워하지 마세요.
-
-1. **파악** — 에러 메시지 전체를 읽는다
-2. **붙여넣기** — Claude Code 채팅창에 에러 메시지 그대로 붙여넣기
-3. **수정** — Claude가 제안한 수정을 적용한다
-4. **확인** — 실제로 작동하는지 확인한다
-5. **계속** — 더 강해진 코드로 다음 단계로
-
-> 에러 메시지는 Claude Code의 입력값입니다. 에러가 날수록 코드가 단단해집니다.
-
----
-
 ## 왜 DART API를 코드 스크립트로 짜는가
 
-AI가 모든 걸 직접 처리하려 하면 정확도가 빠르게 떨어집니다.
 각 단계의 정확도가 90%라면 → 5단계 후 전체 정확도는 59%로 떨어집니다.
 
-그래서 우리 프로젝트는:
 - **DART API 호출, SQLite 저장** → `data.py` 스크립트 (결정론적, 항상 같은 결과)
 - **분석, 판단, 자연어 생성** → Claude API (claude-haiku-4-5)
-
-Claude는 판단에 집중하고, 반복 실행은 코드 스크립트에 맡깁니다.
-이게 6주 프로젝트 아키텍처의 핵심 원리입니다.
