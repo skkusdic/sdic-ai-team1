@@ -18,19 +18,43 @@ def get_corp_code(company_name: str) -> str:
     return results[0].corp_code
 
 
+# label → (표준키, 부호): 손실 표기는 -1로 부호 반전
+_LABEL_MAP = {
+    "매출액":    ("매출액",   1),
+    "영업수익":  ("매출액",   1),  # IT 업종(카카오·네이버) 표기
+    "영업이익":  ("영업이익",  1),
+    "영업손실":  ("영업이익", -1),  # 적자 회사 표기
+    "당기순이익": ("순이익",   1),
+    "당기순손실": ("순이익",  -1),  # 적자 회사 표기
+}
+
+
+def _fs_has_data(fs) -> bool:
+    for key in ("cis", "is"):
+        df = fs.get(key)
+        if df is not None and not df.empty:
+            return True
+    return False
+
+
 def get_financial_statements(corp_code: str):
-    return dart.extract(
-        corp_code=corp_code,
-        bgn_de="20210101",
-        report_tp="annual",
-        separate=True,
-    )
+    # CFS(연결재무제표) 우선, 데이터 없으면 OFS(별도재무제표) 폴백
+    for separate in (False, True):
+        fs = dart.extract(
+            corp_code=corp_code,
+            bgn_de="20210101",
+            report_tp="annual",
+            separate=separate,
+        )
+        if _fs_has_data(fs):
+            return fs
+    raise ValueError("재무제표를 가져올 수 없습니다.")
 
 
 def _parse_dart_fs(fs) -> dict:
-    df = fs["cis"]
+    df = fs.get("cis")
     if df is None:
-        df = fs["is"]
+        df = fs.get("is")
     if df is None:
         raise ValueError("손익계산서 데이터를 찾을 수 없습니다.")
 
@@ -41,21 +65,18 @@ def _parse_dart_fs(fs) -> dict:
         if isinstance(c, tuple) and len(str(c[0])) >= 4 and str(c[0])[:4].isdigit()
     }
 
-    target_labels = {"매출액", "영업이익", "당기순이익"}
-    label_map = {"당기순이익": "순이익"}
-
     result = {}
     for _, row in df.iterrows():
         label = str(row[label_col]).strip()
-        if label not in target_labels:
+        if label not in _LABEL_MAP:
             continue
-        key = label_map.get(label, label)
+        key, sign = _LABEL_MAP[label]
         for year_str, col in year_cols.items():
             year = int(year_str)
             if year not in result:
                 result[year] = {}
             val = row[col]
-            result[year][key] = int(val // 1_000_000) if val == val else 0
+            result[year][key] = int(val // 1_000_000 * sign) if val == val else 0
 
     return {y: v for y, v in sorted(result.items()) if 2021 <= y <= 2025}
 
@@ -90,7 +111,8 @@ def get_financials(company_name: str) -> dict:
         if data:
             _save_to_db(company_name, data)
         return data
-    except Exception:
+    except Exception as e:
+        print(f"[data] {company_name} 재무 데이터 로드 실패: {e}")
         return {}
 
 
