@@ -85,13 +85,13 @@ def _parse_dart_fs(fs) -> dict:
         label = str(row[label_col]).strip()
         if label not in _LABEL_MAP:
             continue
-        key, sign = _LABEL_MAP[label]
+        std_key, sign = _LABEL_MAP[label]
         for year_str, col in year_cols.items():
             year = int(year_str)
             if year not in result:
                 result[year] = {}
             val = row[col]
-            result[year][key] = int(val // 100_000_000 * sign) if val == val else 0
+            result[year][std_key] = int(val // 100_000_000 * sign) if val == val else 0
 
     return {y: v for y, v in sorted(result.items()) if 2020 <= y <= 2024}
 
