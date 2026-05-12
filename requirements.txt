@@ -3,3 +3,5 @@ langgraph
 anthropic
 dart-fss
 python-dotenv
+plotly
+fpdf2
