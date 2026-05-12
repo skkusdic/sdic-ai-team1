@@ -8,14 +8,14 @@ dart.set_api_key(os.getenv("DART_API_KEY"))
 dart.enable_spinner(False)
 
 
-def get_corp_code(company_name: str) -> str:
+def get_corp_codes(company_name: str) -> list:
     corp_list = dart.get_corp_list()
     results = corp_list.find_by_corp_name(company_name, exactly=True)
     if not results:
         results = corp_list.find_by_corp_name(company_name, exactly=False)
     if not results:
         raise ValueError(f"기업을 찾을 수 없습니다: {company_name}")
-    return results[0].corp_code
+    return [r.corp_code for r in results]
 
 
 # label → (표준키, 부호): 손실 표기는 -1로 부호 반전
@@ -25,6 +25,7 @@ _LABEL_MAP = {
     "영업이익":  ("영업이익",  1),
     "영업손실":  ("영업이익", -1),  # 적자 회사 표기
     "당기순이익": ("순이익",   1),
+    "당기순이익(손실)": ("순이익", 1),  # 카카오 등 이익/손실 통합 표기
     "당기순손실": ("순이익",  -1),  # 적자 회사 표기
 }
 
@@ -40,17 +41,21 @@ def _fs_has_data(fs) -> bool:
     return False
 
 
-def get_financial_statements(corp_code: str):
-    # CFS(연결재무제표) 우선, 데이터 없으면 OFS(별도재무제표) 폴백
-    for separate in (False, True):
-        fs = dart.extract(
-            corp_code=corp_code,
-            bgn_de="20210101",
-            report_tp="annual",
-            separate=separate,
-        )
-        if _fs_has_data(fs):
-            return fs
+def get_financial_statements(corp_codes: list):
+    # 동명 기업 여러 개 순차 시도, CFS 우선 → OFS 폴백
+    for corp_code in corp_codes:
+        for separate in (False, True):
+            try:
+                fs = dart.extract(
+                    corp_code=corp_code,
+                    bgn_de="20210101",
+                    report_tp="annual",
+                    separate=separate,
+                )
+                if _fs_has_data(fs):
+                    return fs
+            except Exception:
+                pass
     raise ValueError("재무제표를 가져올 수 없습니다.")
 
 
@@ -108,8 +113,8 @@ def _save_to_db(company_name: str, data: dict):
 
 def get_financials(company_name: str) -> dict:
     try:
-        corp_code = get_corp_code(company_name)
-        fs = get_financial_statements(corp_code)
+        corp_codes = get_corp_codes(company_name)
+        fs = get_financial_statements(corp_codes)
         data = _parse_dart_fs(fs)
         if data:
             _save_to_db(company_name, data)

@@ -3,7 +3,7 @@ from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, END
 from claude_client import ask
 from agents.data_agent import run_data_agent
-from agents.analysis_agent import analyze
+from agents.analysis_agent import analysis_agent
 from agents.report_agent import run_report_agent
 
 
@@ -45,16 +45,6 @@ def route_supervisor(state: State) -> Literal["data_agent", "analysis_agent", "r
     return state.get("next_agent", "__end__")
 
 
-def data_agent_node(state: State) -> State:
-    result = run_data_agent(state)
-    financials = result.get("financials", {})
-    if financials:
-        print(f"[data_agent] 로드 완료: {sorted(financials.keys())}년도")
-    else:
-        print("[data_agent] 데이터 없음")
-    return {"financials": financials}
-
-
 def route_data_agent(state: State) -> Literal["analysis_agent", "no_data"]:
     if state.get("financials"):
         return "analysis_agent"
@@ -66,27 +56,12 @@ def no_data_node(state: State) -> State:
     return {"result": "데이터를 찾을 수 없습니다"}
 
 
-def analysis_agent_node(state: State) -> State:
-    company = state.get("company", "")
-    print(f"[analysis_agent] {company} 분석 중...")
-    analysis = analyze(state["financials"])
-    print("[analysis_agent] 분석 완료")
-    return {"analysis": analysis, "result": analysis}
-
-
-def report_agent_node(state: State) -> State:
-    result = run_report_agent(state)
-    pdf_path = result.get("pdf_path", "")
-    print(f"[report_agent] PDF 생성 완료: {pdf_path}")
-    return {"pdf_path": pdf_path}
-
-
 graph = StateGraph(State)
 graph.add_node("supervisor", supervisor_node)
-graph.add_node("data_agent", data_agent_node)
+graph.add_node("data_agent", run_data_agent)
 graph.add_node("no_data", no_data_node)
-graph.add_node("analysis_agent", analysis_agent_node)
-graph.add_node("report_agent", report_agent_node)
+graph.add_node("analysis_agent", analysis_agent)
+graph.add_node("report_agent", run_report_agent)
 
 graph.set_entry_point("supervisor")
 graph.add_conditional_edges("supervisor", route_supervisor, {

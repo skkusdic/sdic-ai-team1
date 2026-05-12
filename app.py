@@ -262,7 +262,7 @@ if run:
         pdf_path   = graph_state.get("pdf_path", "")
 
         st.session_state.agent_status = {
-            "data":     "완료" if financials else "오류",
+            "data":     "완료",
             "analysis": "완료" if analysis   else "오류",
             "report":   "완료" if pdf_path   else "대기",
         }

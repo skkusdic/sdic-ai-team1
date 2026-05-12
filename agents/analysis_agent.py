@@ -7,7 +7,7 @@ from claude_client import ask
 
 def analyze(financials: dict) -> str:
     rows = "\n".join(
-        f"{year}년: 매출 {d.get('매출액', 0):,}백만원, 영업이익 {d.get('영업이익', 0):,}백만원, 순이익 {d.get('순이익', 0):,}백만원"
+        f"{year}년: 매출 {d.get('매출액', 0):,}억원, 영업이익 {d.get('영업이익', 0):,}억원, 순이익 {d.get('순이익', 0):,}억원"
         for year, d in sorted(financials.items())
     )
 
@@ -18,13 +18,21 @@ def analyze(financials: dict) -> str:
     op_margin = round(op_profit / revenue * 100, 1) if revenue else 0
 
     prompt = (
-        f"다음은 어떤 기업의 {min(financials)}~{latest_year}년 연결재무제표 요약입니다 (단위: 백만원).\n"
+        f"다음은 어떤 기업의 {min(financials)}~{latest_year}년 연결재무제표 요약입니다 (단위: 억원).\n"
         f"{rows}\n\n"
         f"이 기업의 영업이익률은 {op_margin}%로 시작하는 문장으로, "
         "매출 추세, 수익성(영업이익률·순이익률), 전년 대비 주요 변화를 포함해서 "
         "한국어로 3~5문장으로 분석해줘."
     )
     return ask(prompt)
+
+
+def analysis_agent(state: dict) -> dict:
+    company = state.get("company", "")
+    print(f"[analysis_agent] {company} 분석 중...")
+    result = analyze(state["financials"])
+    print("[analysis_agent] 분석 완료")
+    return {"analysis": result, "result": result}
 
 
 if __name__ == "__main__":
