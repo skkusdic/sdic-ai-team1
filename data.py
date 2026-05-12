@@ -15,7 +15,10 @@ def get_corp_codes(company_name: str) -> list:
         results = corp_list.find_by_corp_name(company_name, exactly=False)
     if not results:
         raise ValueError(f"기업을 찾을 수 없습니다: {company_name}")
-    return [r.corp_code for r in results]
+    # 상장사(stock_code 있는 법인) 우선 — 말소법인 회피
+    listed = [r for r in results if getattr(r, "stock_code", None)]
+    unlisted = [r for r in results if not getattr(r, "stock_code", None)]
+    return [r.corp_code for r in listed + unlisted]
 
 
 # label → (표준키, 부호): 손실 표기는 -1로 부호 반전
@@ -53,6 +56,7 @@ def get_financial_statements(corp_codes: list):
                     end_de="20251231",
                     report_tp="annual",
                     separate=separate,
+                    dataset="web",  # xbrl은 Python 3.14에서 KeyError 'C' 발생
                 )
                 if _fs_has_data(fs):
                     return fs
@@ -93,7 +97,11 @@ def _parse_dart_fs(fs) -> dict:
             val = row[col]
             result[year][std_key] = int(val // 100_000_000 * sign) if val == val else 0
 
-    return {y: v for y, v in sorted(result.items()) if 2020 <= y <= 2024}
+    filtered = {y: v for y, v in sorted(result.items()) if 2020 <= y <= 2024}
+    for v in filtered.values():
+        for k in ("매출액", "영업이익", "순이익"):
+            v.setdefault(k, 0)
+    return filtered
 
 
 def _save_to_db(company_name: str, data: dict):
