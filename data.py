@@ -84,7 +84,7 @@ def _parse_dart_fs(fs) -> dict:
             if year not in result:
                 result[year] = {}
             val = row[col]
-            result[year][key] = int(val // 1_000_000 * sign) if val == val else 0
+            result[year][key] = int(val // 100_000_000 * sign) if val == val else 0
 
     return {y: v for y, v in sorted(result.items()) if 2021 <= y <= 2025}
 

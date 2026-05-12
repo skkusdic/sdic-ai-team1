@@ -284,9 +284,9 @@ if st.session_state.graph_state is not None:
             [
                 {
                     "연도": year,
-                    "매출액 (백만원)":   d["매출액"],
-                    "영업이익 (백만원)": d["영업이익"],
-                    "순이익 (백만원)":   d["순이익"],
+                    "매출액 (억원)":   d["매출액"],
+                    "영업이익 (억원)": d["영업이익"],
+                    "순이익 (억원)":   d["순이익"],
                 }
                 for year, d in sorted(financials.items())
             ]
@@ -294,9 +294,9 @@ if st.session_state.graph_state is not None:
 
         fmt = "{:,.0f}".format
         styled_df = df.style.format({
-            "매출액 (백만원)":   fmt,
-            "영업이익 (백만원)": fmt,
-            "순이익 (백만원)":   fmt,
+            "매출액 (억원)":   fmt,
+            "영업이익 (억원)": fmt,
+            "순이익 (억원)":   fmt,
         }).set_properties(**{"text-align": "center"}).set_table_styles(
             [{"selector": "th", "props": [("text-align", "center")]}]
         )
