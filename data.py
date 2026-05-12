@@ -62,10 +62,15 @@ def get_financial_statements(corp_codes: list):
 
 
 def _parse_dart_fs(fs) -> dict:
-    df = fs["cis"]
-    if df is None:
-        df = fs["is"]
-    if df is None:
+    df = None
+    for key in ("cis", "is"):
+        try:
+            df = fs[key]
+            if df is not None and not df.empty:
+                break
+        except (KeyError, TypeError):
+            pass
+    if df is None or df.empty:
         raise ValueError("손익계산서 데이터를 찾을 수 없습니다.")
 
     label_col = [c for c in df.columns if "label_ko" in str(c)][0]
