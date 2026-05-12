@@ -31,9 +31,12 @@ _LABEL_MAP = {
 
 def _fs_has_data(fs) -> bool:
     for key in ("cis", "is"):
-        df = fs.get(key)
-        if df is not None and not df.empty:
-            return True
+        try:
+            df = fs[key]
+            if df is not None and not df.empty:
+                return True
+        except (KeyError, TypeError):
+            pass
     return False
 
 
@@ -52,9 +55,9 @@ def get_financial_statements(corp_code: str):
 
 
 def _parse_dart_fs(fs) -> dict:
-    df = fs.get("cis")
+    df = fs["cis"]
     if df is None:
-        df = fs.get("is")
+        df = fs["is"]
     if df is None:
         raise ValueError("손익계산서 데이터를 찾을 수 없습니다.")
 
