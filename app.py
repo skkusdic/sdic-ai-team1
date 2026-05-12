@@ -2,6 +2,7 @@ import os
 import base64
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from graph import pipeline
 
 st.set_page_config(page_title="AI 재무 컨설팅 어시스턴트", layout="wide")
@@ -164,8 +165,21 @@ st.markdown("""
 # ── 세션 상태 초기화 ──────────────────────────────────────
 if "agent_status" not in st.session_state:
     st.session_state.agent_status = {"data": "대기", "analysis": "대기", "report": "대기"}
-if "graph_state" not in st.session_state:
-    st.session_state.graph_state = None
+if "final_state" not in st.session_state:
+    st.session_state.final_state = None
+if "company" not in st.session_state:
+    st.session_state.company = ""
+
+# ── 헬퍼 함수 ────────────────────────────────────────────
+def delta_pct(curr, prev):
+    if prev and prev != 0:
+        return f"{(curr - prev) / prev * 100:+.1f}%"
+    return None
+
+def delta_pp(curr, prev):
+    if prev is not None:
+        return f"{curr - prev:+.1f}%p"
+    return None
 
 # ── 헤더: 타이틀 + 로고 ───────────────────────────────────
 col_title, col_logo = st.columns([5, 1])
@@ -229,7 +243,7 @@ with st.sidebar:
 # ── 입력 영역 ─────────────────────────────────────────────
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
 st.markdown("<p style='font-size:14px; color:#555; margin-bottom:6px;'>분석할 기업명을 입력하세요</p>", unsafe_allow_html=True)
-company = st.text_input("", placeholder="예: 에이피알", label_visibility="collapsed")
+company_input = st.text_input("", placeholder="예: 에이피알", label_visibility="collapsed")
 st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
@@ -238,16 +252,16 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 # ── 분석 실행 ─────────────────────────────────────────────
 if run:
-    if not company.strip():
+    if not company_input.strip():
         st.error("기업명을 입력해주세요")
     else:
         st.session_state.agent_status = {"data": "실행 중", "analysis": "실행 중", "report": "실행 중"}
-        st.session_state.graph_state = None
+        st.session_state.final_state = None
 
-        with st.spinner(f"{company} 분석 중..."):
+        with st.spinner(f"{company_input} 분석 중..."):
             graph_state = pipeline.invoke({
-                "request": f"{company} 재무 분석해줘",
-                "company": company.strip(),
+                "request": f"{company_input} 재무 분석해줘",
+                "company": company_input.strip(),
                 "next_agent": "",
                 "financials": {},
                 "analysis": "",
@@ -255,7 +269,8 @@ if run:
                 "pdf_path": "",
             })
 
-        st.session_state.graph_state = graph_state
+        st.session_state.final_state = graph_state
+        st.session_state.company = company_input.strip()
 
         financials = graph_state.get("financials", {})
         analysis   = graph_state.get("analysis", "")
@@ -263,62 +278,144 @@ if run:
 
         st.session_state.agent_status = {
             "data":     "완료",
-            "analysis": "완료" if analysis   else "오류",
-            "report":   "완료" if pdf_path   else "대기",
+            "analysis": "완료" if analysis else "오류",
+            "report":   "완료" if pdf_path else "대기",
         }
         st.rerun()
 
 # ── 결과 표시 ─────────────────────────────────────────────
-if st.session_state.graph_state is not None:
-    graph_state = st.session_state.graph_state
-    financials  = graph_state.get("financials", {})
-    analysis    = graph_state.get("analysis", "")
-    pdf_path    = graph_state.get("pdf_path", "")
+if "final_state" in st.session_state and st.session_state.final_state is not None:
+    graph_state  = st.session_state.final_state
+    company_name = st.session_state.company
+    financials   = graph_state.get("financials", {})
+    analysis     = graph_state.get("analysis", "")
+    pdf_path     = graph_state.get("pdf_path", "")
 
     if not financials:
         st.markdown('<div class="fade-section">', unsafe_allow_html=True)
         st.error(graph_state.get("result", "데이터를 찾을 수 없습니다. 기업명을 확인해주세요."))
         st.markdown('</div>', unsafe_allow_html=True)
     else:
-        df = pd.DataFrame(
-            [
-                {
-                    "연도": year,
-                    "매출액 (억원)":   d["매출액"],
-                    "영업이익 (억원)": d["영업이익"],
-                    "순이익 (억원)":   d["순이익"],
-                }
-                for year, d in sorted(financials.items())
-            ]
-        ).set_index("연도")
+        # ── DataFrame 구성 ──
+        rows = []
+        for year, d in sorted(financials.items()):
+            rev = d["매출액"]
+            op  = d["영업이익"]
+            net = d["순이익"]
+            margin = round(op / rev * 100, 1) if rev else 0.0
+            rows.append({
+                "연도": year,
+                "매출액 (억원)":   rev,
+                "영업이익 (억원)": op,
+                "순이익 (억원)":   net,
+                "영업이익률 (%)":  margin,
+            })
+        df = pd.DataFrame(rows)
 
+        # ── KPI 값 ──
+        latest = df.iloc[-1]
+        prev   = df.iloc[-2] if len(df) >= 2 else None
+
+        rev_curr = latest["매출액 (억원)"]
+        op_curr  = latest["영업이익 (억원)"]
+        net_curr = latest["순이익 (억원)"]
+        mg_curr  = latest["영업이익률 (%)"]
+        latest_year = latest["연도"]
+
+        rev_prev = prev["매출액 (억원)"]   if prev is not None else None
+        op_prev  = prev["영업이익 (억원)"] if prev is not None else None
+        net_prev = prev["순이익 (억원)"]   if prev is not None else None
+        mg_prev  = prev["영업이익률 (%)"]  if prev is not None else None
+
+        # ── YoY 성장률 표 ──
+        yoy = df[["연도"]].copy()
+        for col in ["매출액 (억원)", "영업이익 (억원)", "순이익 (억원)"]:
+            yoy[col + " YoY"] = df[col].pct_change().apply(
+                lambda x: f"{x * 100:+.1f}%" if pd.notna(x) else "—"
+            )
+
+        # ── 스타일 DataFrame ──
         fmt = "{:,.0f}".format
         styled_df = df.style.format({
             "매출액 (억원)":   fmt,
             "영업이익 (억원)": fmt,
             "순이익 (억원)":   fmt,
+            "영업이익률 (%)":  "{:.1f}".format,
         }).set_properties(**{"text-align": "center"}).set_table_styles(
             [{"selector": "th", "props": [("text-align", "center")]}]
         )
 
-        company_name = graph_state.get("company", "")
-
+        # ── 탭 ──
         tab1, tab2 = st.tabs(["재무 데이터", "Claude 분석"])
 
         with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
             st.subheader(f"{company_name} 연도별 재무 현황")
+
+            # KPI 카드 4장
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric(
+                f"매출액 ({latest_year})",
+                f"{rev_curr:,.0f} 억원",
+                delta_pct(rev_curr, rev_prev),
+            )
+            c2.metric(
+                f"영업이익 ({latest_year})",
+                f"{op_curr:,.0f} 억원",
+                delta_pct(op_curr, op_prev),
+            )
+            c3.metric(
+                f"순이익 ({latest_year})",
+                f"{net_curr:,.0f} 억원",
+                delta_pct(net_curr, net_prev),
+            )
+            c4.metric(
+                f"영업이익률 ({latest_year})",
+                f"{mg_curr:.1f}%",
+                delta_pp(mg_curr, mg_prev),
+            )
+
+            st.markdown("---")
             st.dataframe(styled_df, use_container_width=True)
+
+            # 3지표 추이 차트
+            fig_trend = px.line(
+                df, x="연도",
+                y=["매출액 (억원)", "영업이익 (억원)", "순이익 (억원)"],
+                markers=True,
+                title=f"{company_name} 매출액 / 영업이익 / 순이익 추이",
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+
+            # 영업이익률 차트
+            fig_margin = px.line(
+                df, x="연도", y="영업이익률 (%)",
+                markers=True,
+                title=f"{company_name} 영업이익률 추이",
+            )
+            fig_margin.update_traces(line_color="#FF6B6B")
+            st.plotly_chart(fig_margin, use_container_width=True)
+
+            # YoY 성장률 표
+            st.subheader("YoY 성장률")
+            st.dataframe(yoy, use_container_width=True, hide_index=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab2:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
             st.subheader(f"{company_name} 재무 분석")
             st.write(analysis if analysis else "분석 결과가 없습니다.")
-            if pdf_path and os.path.exists(pdf_path):
-                with open(pdf_path, "rb") as f:
-                    st.download_button("PDF 다운로드", f, file_name=os.path.basename(pdf_path), mime="application/pdf")
             st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── PDF 다운로드 (탭 밖) ──
+        if pdf_path and os.path.exists(pdf_path):
+            with open(pdf_path, "rb") as f:
+                st.download_button(
+                    label="PDF 리포트 다운로드",
+                    data=f,
+                    file_name=f"{company_name}_재무분석.pdf",
+                    mime="application/pdf",
+                )
 
         st.markdown('<div class="fade-section">', unsafe_allow_html=True)
         st.success("분석 완료!")
