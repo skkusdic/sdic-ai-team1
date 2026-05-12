@@ -49,7 +49,8 @@ def get_financial_statements(corp_codes: list):
             try:
                 fs = dart.extract(
                     corp_code=corp_code,
-                    bgn_de="20210101",
+                    bgn_de="20200101",
+                    end_de="20251231",
                     report_tp="annual",
                     separate=separate,
                 )
@@ -87,7 +88,7 @@ def _parse_dart_fs(fs) -> dict:
             val = row[col]
             result[year][key] = int(val // 100_000_000 * sign) if val == val else 0
 
-    return {y: v for y, v in sorted(result.items()) if 2021 <= y <= 2025}
+    return {y: v for y, v in sorted(result.items()) if 2020 <= y <= 2024}
 
 
 def _save_to_db(company_name: str, data: dict):
