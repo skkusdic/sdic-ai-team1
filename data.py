@@ -1,147 +1,199 @@
 import os
 import sqlite3
+import requests
+
 import dart_fss as dart
 from dotenv import load_dotenv
 
 load_dotenv()
-dart.set_api_key(os.getenv("DART_API_KEY"))
-dart.enable_spinner(False)
 
+DB_PATH = "financials.db"
+DART_API_KEY = os.environ["DART_API_KEY"]
+DART_ENDPOINT = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
 
-def get_corp_codes(company_name: str) -> list:
-    corp_list = dart.get_corp_list()
-    results = corp_list.find_by_corp_name(company_name, exactly=True)
-    if not results:
-        results = corp_list.find_by_corp_name(company_name, exactly=False)
-    if not results:
-        raise ValueError(f"기업을 찾을 수 없습니다: {company_name}")
-    # 상장사(stock_code 있는 법인) 우선 — 말소법인 회피
-    listed = [r for r in results if getattr(r, "stock_code", None)]
-    unlisted = [r for r in results if not getattr(r, "stock_code", None)]
-    return [r.corp_code for r in listed + unlisted]
+dart.set_api_key(DART_API_KEY)
 
+_corp_list_cache = None
 
-# label → (표준키, 부호): 손실 표기는 -1로 부호 반전
-_LABEL_MAP = {
-    "매출액":          ("매출액",   1),
-    "영업수익":        ("매출액",   1),  # IT 업종(카카오·네이버) 표기
-    "영업이익":        ("영업이익",  1),
-    "영업손실":        ("영업이익", -1),  # 적자 회사 표기
-    "영업이익(손실)":  ("영업이익",  1),  # 괄호 병기 표기 — 값이 음수면 그대로 음수
-    "당기순이익":      ("순이익",   1),
-    "당기순손실":      ("순이익",  -1),  # 적자 회사 표기
-    "당기순이익(손실)": ("순이익",   1),  # 괄호 병기 표기 — 값이 음수면 그대로 음수
+_REVENUE_LABELS = {"매출액", "영업수익", "수익(매출액)"}
+_OPERATING_LABELS = {"영업이익", "영업이익(손실)", "영업손실"}
+_NET_LABELS = {"당기순이익", "당기순이익(손실)", "당기순손실"}
+
+# DART에 영문/약어로 등록된 회사 한글 별칭
+_CORP_ALIASES = {
+    "네이버": "NAVER",
+    "케이티": "KT",
+    "에스케이텔레콤": "SK텔레콤",
+    "엘지전자": "LG전자",
+    "엘지이노텍": "LG이노텍",
+    "엘지화학": "LG화학",
+    "엘지에너지솔루션": "LG에너지솔루션",
+    "엘지생활건강": "LG생활건강",
+    "엘지유플러스": "LG유플러스",
+    "에스케이하이닉스": "SK하이닉스",
+    "에스케이이노베이션": "SK이노베이션",
+    "현대차": "현대자동차",
+    "기아차": "기아",
+    "포스코": "POSCO홀딩스",
+    "비비큐": "BBQ",
 }
 
 
-def _fs_has_data(fs) -> bool:
-    for key in ("cis", "is"):
-        try:
-            df = fs[key]
-            if df is not None and not df.empty:
-                return True
-        except (KeyError, TypeError):
-            pass
-    return False
+def _get_corp_list():
+    global _corp_list_cache
+    if _corp_list_cache is None:
+        _corp_list_cache = dart.get_corp_list()
+    return _corp_list_cache
 
 
-def get_financial_statements(corp_codes: list):
-    # 동명 기업 여러 개 순차 시도, CFS 우선 → OFS 폴백
-    for corp_code in corp_codes:
-        for separate in (False, True):
-            try:
-                fs = dart.extract(
-                    corp_code=corp_code,
-                    bgn_de="20200101",
-                    end_de="20251231",
-                    report_tp="annual",
-                    separate=separate,
-                    dataset="web",  # xbrl은 Python 3.14에서 KeyError 'C' 발생
-                )
-                if _fs_has_data(fs):
-                    return fs
-            except Exception:
-                pass
-    raise ValueError("재무제표를 가져올 수 없습니다.")
+def _find_corp_code(company_name: str) -> str:
+    corp_list = _get_corp_list()
+    raw = company_name.strip()
+    no_space = raw.replace(" ", "")
+    candidates = [raw]
+    if no_space != raw:
+        candidates.append(no_space)
+    if no_space in _CORP_ALIASES:
+        candidates.append(_CORP_ALIASES[no_space])
+
+    for cand in candidates:
+        results = corp_list.find_by_corp_name(cand, exactly=True) or []
+        listed = [r for r in results if r.stock_code]
+        if listed:
+            return listed[0].corp_code
+        if results:
+            return results[0].corp_code
+
+    for cand in candidates:
+        results = corp_list.find_by_corp_name(cand, exactly=False) or []
+        listed = [r for r in results if r.stock_code]
+        pool = listed if listed else results
+        if pool:
+            return min(pool, key=lambda r: len(r.corp_name)).corp_code
+
+    return ""
 
 
-def _parse_dart_fs(fs) -> dict:
-    df = None
-    for key in ("cis", "is"):
-        try:
-            df = fs[key]
-            if df is not None and not df.empty:
-                break
-        except (KeyError, TypeError):
-            pass
-    if df is None or df.empty:
-        raise ValueError("손익계산서 데이터를 찾을 수 없습니다.")
-
-    label_col = [c for c in df.columns if "label_ko" in str(c)][0]
-    year_cols = {
-        str(c[0])[:4]: c
-        for c in df.columns
-        if isinstance(c, tuple) and len(str(c[0])) >= 4 and str(c[0])[:4].isdigit()
+def _extract_year(corp_code: str, year: int, fs_div: str) -> dict:
+    """fnlttSinglAcntAll API로 단년 손익 추출. fs_div: 'CFS' 또는 'OFS'. 단위: 억원."""
+    params = {
+        "crtfc_key": DART_API_KEY,
+        "corp_code": corp_code,
+        "bsns_year": str(year),
+        "reprt_code": "11011",
+        "fs_div": fs_div,
     }
+    try:
+        resp = requests.get(DART_ENDPOINT, params=params, timeout=10).json()
+    except Exception:
+        return {}
+
+    items = resp.get("list", [])
+    data = {}
+    for item in items:
+        if item.get("sj_div") not in ("IS", "CIS"):
+            continue
+        nm = item.get("account_nm", "").strip()
+        amt = item.get("thstrm_amount", "").replace(",", "")
+        if not amt or amt == "-":
+            continue
+        try:
+            val = int(amt) // 100_000_000
+        except (ValueError, TypeError):
+            continue
+        if nm in _REVENUE_LABELS and "매출액" not in data:
+            data["매출액"] = val
+        elif nm in _OPERATING_LABELS and "영업이익" not in data:
+            data["영업이익"] = val
+        elif nm in _NET_LABELS and "순이익" not in data:
+            data["순이익"] = val
+    return data
+
+
+def _fetch_from_dart(company_name: str) -> dict:
+    corp_code = _find_corp_code(company_name)
+    if not corp_code:
+        return {}
 
     result = {}
-    for _, row in df.iterrows():
-        label = str(row[label_col]).strip()
-        if label not in _LABEL_MAP:
-            continue
-        std_key, sign = _LABEL_MAP[label]
-        for year_str, col in year_cols.items():
-            year = int(year_str)
-            if year not in result:
-                result[year] = {}
-            val = row[col]
-            result[year][std_key] = int(val // 100_000_000 * sign) if val == val else 0
+    for year in range(2020, 2025):
+        year_data = _extract_year(corp_code, year, "CFS")
+        if not year_data or not {"매출액", "영업이익", "순이익"}.issubset(year_data):
+            ofs = _extract_year(corp_code, year, "OFS")
+            for k, v in ofs.items():
+                year_data.setdefault(k, v)
+        if {"매출액", "영업이익", "순이익"}.issubset(year_data):
+            result[year] = year_data
 
-    filtered = {y: v for y, v in sorted(result.items()) if 2020 <= y <= 2024}
-    for v in filtered.values():
-        for k in ("매출액", "영업이익", "순이익"):
-            v.setdefault(k, 0)
-    return filtered
+    return result
 
 
-def _save_to_db(company_name: str, data: dict):
-    con = sqlite3.connect("financials.db")
-    cur = con.cursor()
-    cur.execute("""
+def _init_db(conn: sqlite3.Connection) -> None:
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS financials (
-            company TEXT,
-            year    INTEGER,
+            company  TEXT,
+            year     INTEGER,
             매출액   INTEGER,
-            영업이익  INTEGER,
+            영업이익 INTEGER,
             순이익   INTEGER,
             PRIMARY KEY (company, year)
         )
     """)
-    for year, d in data.items():
-        cur.execute("""
-            INSERT OR REPLACE INTO financials (company, year, 매출액, 영업이익, 순이익)
-            VALUES (?, ?, ?, ?, ?)
-        """, (company_name, year, d.get("매출액"), d.get("영업이익"), d.get("순이익")))
-    con.commit()
-    con.close()
+
+
+def _save_to_db(company_name: str, data: dict) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        _init_db(conn)
+        for year, m in data.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO financials (company, year, 매출액, 영업이익, 순이익) VALUES (?, ?, ?, ?, ?)",
+                (company_name, int(year), m["매출액"], m["영업이익"], m["순이익"]),
+            )
+        conn.commit()
+
+
+def _load_from_db(company_name: str) -> dict:
+    if not os.path.exists(DB_PATH):
+        return {}
+    with sqlite3.connect(DB_PATH) as conn:
+        _init_db(conn)
+        rows = conn.execute(
+            "SELECT year, 매출액, 영업이익, 순이익 FROM financials WHERE company = ? ORDER BY year",
+            (company_name,),
+        ).fetchall()
+    return {
+        str(year): {"매출액": rev, "영업이익": op, "순이익": net}
+        for year, rev, op, net in rows
+    }
 
 
 def get_financials(company_name: str) -> dict:
-    try:
-        corp_codes = get_corp_codes(company_name)
-        fs = get_financial_statements(corp_codes)
-        data = _parse_dart_fs(fs)
-        if data:
-            _save_to_db(company_name, data)
-        return data
-    except Exception as e:
-        print(f"[data] {company_name} 재무 데이터 로드 실패: {e}")
+    """5개년(2020~2024) 재무 데이터. 키는 문자열 연도. 단위: 억원."""
+    cached = _load_from_db(company_name)
+    if cached:
+        return cached
+
+    raw = _fetch_from_dart(company_name)
+    if not raw:
         return {}
+
+    data = {str(year): metrics for year, metrics in raw.items()}
+    _save_to_db(company_name, data)
+    return data
 
 
 if __name__ == "__main__":
-    data = get_financials("에이피알")
-    if not data:
-        print("데이터를 찾을 수 없습니다.")
-    else:
-        print(data)
+    import sys
+    import time
+    sys.stdout.reconfigure(encoding="utf-8")
+
+    for name in ["에이피알", "카카오", "asdfasdf"]:
+        t0 = time.time()
+        d = get_financials(name)
+        elapsed = time.time() - t0
+        if not d:
+            print(f"[{name}] no data ({elapsed:.1f}s)")
+            continue
+        print(f"[{name}] {len(d)}개년 ({elapsed:.1f}s)")
+        for y, m in sorted(d.items()):
+            print(f"  {y}: {m}")
