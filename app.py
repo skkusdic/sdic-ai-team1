@@ -6,6 +6,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+# Streamlit Cloud Secrets → os.environ 동기화
+# 로컬은 .env(python-dotenv)로 읽히므로 이미 설정됨; Cloud는 여기서 주입
+for _key in ("DART_API_KEY", "ANTHROPIC_API_KEY"):
+    if _key in st.secrets and not os.environ.get(_key):
+        os.environ[_key] = st.secrets[_key]
+
 from graph import pipeline
 from rag import retrieve, answer_with_rag
 from text2sql import run_text2sql
