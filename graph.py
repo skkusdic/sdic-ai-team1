@@ -1,5 +1,5 @@
 import sys
-from typing import TypedDict, Literal
+from typing import TypedDict, Literal, Optional
 from langgraph.graph import StateGraph, END
 from claude_client import ask
 from agents.data_agent import run_data_agent
@@ -15,6 +15,7 @@ class State(TypedDict):
     analysis: str
     result: str
     pdf_path: str
+    data_source: Optional[str]
 
 
 def supervisor_node(state: State) -> State:
@@ -91,5 +92,6 @@ if __name__ == "__main__":
         "analysis": "",
         "result": "",
         "pdf_path": "",
+        "data_source": None,
     })
     pprint.pprint({k: v for k, v in final_state.items() if k != "financials"})
