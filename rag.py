@@ -2,7 +2,7 @@ import re
 from collections import Counter
 
 import numpy as np
-from anthropic import Anthropic
+from claude_client import ask
 
 
 def _tokenize(text: str) -> list[str]:
@@ -83,18 +83,10 @@ def retrieve(query: str, financials: dict, company: str, top_k: int = 3) -> list
 def answer_with_rag(query: str, financials: dict, company: str) -> tuple[list, str]:
     top = retrieve(query, financials, company, top_k=3)
     context = "\n".join(item["text"] for _, item in top)
-    client = Anthropic()
-    resp = client.messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=512,
-        messages=[{
-            "role": "user",
-            "content": (
-                f"다음 재무 정보를 참고하여 질문에 답변하세요.\n\n"
-                f"[참고 문서]\n{context}\n\n"
-                f"[질문] {query}\n"
-                "한국어로 간결하게 답변해 주세요."
-            ),
-        }],
+    prompt = (
+        f"다음 재무 정보를 참고하여 질문에 답변하세요.\n\n"
+        f"[참고 문서]\n{context}\n\n"
+        f"[질문] {query}\n"
+        "한국어로 간결하게 답변해 주세요."
     )
-    return top, resp.content[0].text
+    return top, ask(prompt, max_tokens=512)
