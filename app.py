@@ -1,9 +1,15 @@
 import os
 import base64
+import sqlite3
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+
 from graph import pipeline
+from rag import retrieve, answer_with_rag
+from text2sql import run_text2sql
+from data import DB_PATH
 
 st.set_page_config(page_title="AI 재무 컨설팅 어시스턴트", layout="wide")
 
@@ -169,6 +175,10 @@ if "final_state" not in st.session_state:
     st.session_state.final_state = None
 if "company" not in st.session_state:
     st.session_state.company = ""
+if "qa_history" not in st.session_state:
+    st.session_state.qa_history = []
+if "qa_mode" not in st.session_state:
+    st.session_state.qa_mode = "자동"
 
 # ── 헬퍼 함수 ────────────────────────────────────────────
 def delta_pct(curr, prev):
@@ -237,6 +247,23 @@ with st.sidebar:
             f'</div>',
             unsafe_allow_html=True,
         )
+    st.markdown("---")
+    st.markdown("#### SQLite 캐시")
+    if os.path.exists(DB_PATH):
+        with sqlite3.connect(DB_PATH) as _conn:
+            _rows = _conn.execute(
+                "SELECT company, COUNT(*) FROM financials GROUP BY company ORDER BY company"
+            ).fetchall()
+        if _rows:
+            for _corp, _cnt in _rows:
+                st.markdown(
+                    f"<span style='font-size:12px; color:#2e7d32;'>● {_corp} ({_cnt}개년)</span>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.markdown("<span style='font-size:12px; color:#aaa;'>저장된 데이터 없음</span>", unsafe_allow_html=True)
+    else:
+        st.markdown("<span style='font-size:12px; color:#aaa;'>DB 없음</span>", unsafe_allow_html=True)
     st.markdown("---")
     st.markdown("<span style='font-size:12px; color:#888;'>DART API · Claude AI</span>", unsafe_allow_html=True)
 
@@ -346,7 +373,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
         )
 
         # ── 탭 ──
-        tab1, tab2 = st.tabs(["재무 데이터", "Claude 분석"])
+        tab1, tab2, tab3 = st.tabs(["재무 데이터", "Claude 분석", "AI 질문 (RAG + Text2SQL)"])
 
         with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
@@ -405,6 +432,87 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
             st.subheader(f"{company_name} 재무 분석")
             st.write(analysis if analysis else "분석 결과가 없습니다.")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with tab3:
+            st.markdown('<div class="fade-section">', unsafe_allow_html=True)
+            st.subheader(f"{company_name} AI 질문")
+
+            _TEXT2SQL_KEYWORDS = {"평균", "합계", "합", "총", "최대", "최소", "몇", "계산", "비교", "순위", "sum", "avg", "max", "min"}
+
+            mode = st.radio(
+                "질의 모드",
+                ["자동", "RAG", "Text2SQL"],
+                index=["자동", "RAG", "Text2SQL"].index(st.session_state.qa_mode),
+                horizontal=True,
+                key="tab3_mode",
+            )
+            st.session_state.qa_mode = mode
+
+            st.markdown(
+                "<p style='font-size:12px; color:#888; margin-top:4px;'>"
+                "자동: 수치·계산 키워드 감지 시 Text2SQL, 나머지는 RAG</p>",
+                unsafe_allow_html=True,
+            )
+
+            question = st.text_input(
+                "질문을 입력하세요",
+                placeholder="예: 영업이익률이 가장 높은 연도는? / 매출 평균은?",
+                key="tab3_question",
+                label_visibility="collapsed",
+            )
+            ask_btn = st.button("질문하기", key="tab3_ask")
+
+            if ask_btn and question.strip():
+                q = question.strip()
+
+                if mode == "자동":
+                    used_mode = "Text2SQL" if any(kw in q for kw in _TEXT2SQL_KEYWORDS) else "RAG"
+                else:
+                    used_mode = mode
+
+                with st.spinner(f"{used_mode} 처리 중..."):
+                    try:
+                        if used_mode == "RAG":
+                            top_chunks, claude_answer = answer_with_rag(q, financials, company_name)
+                            result = {"mode": "RAG", "q": q, "chunks": top_chunks, "answer": claude_answer}
+                        else:
+                            sql, df_result, err = run_text2sql(q, company_name)
+                            result = {"mode": "Text2SQL", "q": q, "sql": sql, "df": df_result, "error": err}
+                    except Exception as e:
+                        result = {"mode": used_mode, "q": q, "error": str(e)}
+
+                st.session_state.qa_history.insert(0, result)
+
+            if st.session_state.qa_history:
+                st.markdown("---")
+                for item in st.session_state.qa_history:
+                    st.markdown(f"**Q.** {item['q']}")
+                    badge_color = "#1565c0" if item["mode"] == "RAG" else "#6a1b9a"
+                    st.markdown(
+                        f"<span style='font-size:11px; background:{badge_color}; color:#fff; "
+                        f"padding:2px 8px; border-radius:4px;'>{item['mode']}</span>",
+                        unsafe_allow_html=True,
+                    )
+
+                    if "error" in item and item["mode"] not in ("RAG", "Text2SQL"):
+                        st.error(item["error"])
+                    elif item["mode"] == "RAG":
+                        st.markdown("**참고 발췌 (상위 3개)**")
+                        for score, chunk in item["chunks"]:
+                            with st.expander(f"{chunk['label']} — 유사도 {score:.3f}"):
+                                st.write(chunk["text"])
+                        st.info(item["answer"])
+                    else:
+                        st.markdown("**생성된 SQL**")
+                        st.code(item["sql"], language="sql")
+                        if item.get("error"):
+                            st.error(f"실행 오류: {item['error']}")
+                        elif item["df"] is not None:
+                            st.dataframe(item["df"], use_container_width=True, hide_index=True)
+
+                    st.markdown("")
+
             st.markdown('</div>', unsafe_allow_html=True)
 
         # ── PDF 다운로드 (탭 밖) ──
