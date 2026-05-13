@@ -19,6 +19,26 @@ _REVENUE_LABELS = {"매출액", "영업수익", "수익(매출액)"}
 _OPERATING_LABELS = {"영업이익", "영업이익(손실)", "영업손실"}
 _NET_LABELS = {"당기순이익", "당기순이익(손실)", "당기순손실"}
 
+# 영문 입력 → 한국어 회사명 변환 (대소문자 무시)
+_EN_TO_KR = {
+    "apr": "에이피알",
+    "samsung": "삼성전자",
+    "kakao": "카카오",
+    "hyundai": "현대자동차",
+    "kia": "기아",
+    "lg": "LG전자",
+    "sk hynix": "SK하이닉스",
+    "hynix": "SK하이닉스",
+    "naver": "NAVER",
+    "kt": "케이티",
+    "posco": "POSCO홀딩스",
+    "lotte": "롯데쇼핑",
+    "celltrion": "셀트리온",
+    "krafton": "크래프톤",
+    "ncsoft": "엔씨소프트",
+    "netmarble": "넷마블",
+}
+
 # DART에 영문/약어로 등록된 회사 한글 별칭
 _CORP_ALIASES = {
     "네이버": "NAVER",
@@ -49,6 +69,8 @@ def _get_corp_list():
 def _find_corp_code(company_name: str) -> str:
     corp_list = _get_corp_list()
     raw = company_name.strip()
+    # 영문 입력이면 한국어로 변환
+    raw = _EN_TO_KR.get(raw.lower(), raw)
     no_space = raw.replace(" ", "")
     candidates = [raw]
     if no_space != raw:
