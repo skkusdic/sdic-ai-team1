@@ -86,12 +86,15 @@ def search(
     vectorizer: TfidfVectorizer,
     matrix: np.ndarray,
     k: int = 3,
-) -> list[tuple[str, float]]:
-    """질문과 가장 유사한 chunk k개를 (텍스트, 점수) 리스트로 반환."""
+) -> list[tuple[float, dict]]:
+    """질문과 가장 유사한 chunk k개를 (점수, {"label": ..., "text": ...}) 리스트로 반환."""
     query_vec = vectorizer.transform([query])
     scores = cosine_similarity(query_vec, matrix)[0]
     top_indices = np.argsort(scores)[::-1][:k]
-    return [(chunks[i], float(scores[i])) for i in top_indices]
+    return [
+        (float(scores[i]), {"label": f"발췌 {rank+1}", "text": chunks[i]})
+        for rank, i in enumerate(top_indices)
+    ]
 
 
 # ── 4. 전체 파이프라인: 질문 → Claude 답변 ────────────────────────────────
@@ -105,8 +108,8 @@ def answer(query: str, company: str, financials: dict) -> tuple[str, list[tuple[
     top3 = search(query, chunks, vectorizer, matrix, k=3)
 
     excerpts = "\n\n".join(
-        f"[발췌 {i+1}] (유사도 {score:.4f})\n{chunk}"
-        for i, (chunk, score) in enumerate(top3)
+        f"[{chunk['label']}] (유사도 {score:.4f})\n{chunk['text']}"
+        for score, chunk in top3
     )
 
     prompt = f"""아래 발췌 3개만 사용해서 질문에 한국어로 답하세요.
@@ -138,8 +141,8 @@ if __name__ == "__main__":
 
         reply, top3 = answer("2023년 수익성은?", company, financials)
         print("[ 검색된 발췌 ]")
-        for i, (chunk, score) in enumerate(top3):
-            print(f"  [{i+1}] 유사도 {score:.4f} | {chunk[:70]}...")
+        for score, chunk in top3:
+            print(f"  [{chunk['label']}] 유사도 {score:.4f} | {chunk['text'][:70]}...")
         print(f"\n[ Claude 답변 ]\n{reply}")
 
         print("\n--- 캐시 재로드 테스트 ---")
