@@ -271,6 +271,28 @@ with st.sidebar:
     else:
         st.markdown("<span style='font-size:12px; color:#aaa;'>DB 없음</span>", unsafe_allow_html=True)
     st.markdown("---")
+    st.markdown("#### 데이터 소스")
+    _data_source = (
+        st.session_state.final_state.get("data_source", "")
+        if st.session_state.final_state
+        else ""
+    )
+    if _data_source == "cache":
+        st.markdown(
+            "<span style='font-size:13px; color:#1565c0;'>● cache (SQLite)</span>",
+            unsafe_allow_html=True,
+        )
+    elif _data_source == "dart":
+        st.markdown(
+            "<span style='font-size:13px; color:#2e7d32;'>● dart (API)</span>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<span style='font-size:12px; color:#aaa;'>분석 전</span>",
+            unsafe_allow_html=True,
+        )
+    st.markdown("---")
     st.markdown("<span style='font-size:12px; color:#888;'>DART API · Claude AI</span>", unsafe_allow_html=True)
 
 # ── 입력 영역 ─────────────────────────────────────────────
