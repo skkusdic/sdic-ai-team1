@@ -126,6 +126,14 @@ def answer(query: str, company: str, financials: dict) -> tuple[str, list[tuple[
     return reply, top3
 
 
+# ── app.py 호환 별칭 ──────────────────────────────────────────────────────
+retrieve = search
+
+def answer_with_rag(query: str, financials: dict, company: str):
+    """app.py 호출 규약(query, financials, company) 대응 래퍼."""
+    return answer(query, company, financials)
+
+
 # ── 단독 실행 테스트 ──────────────────────────────────────────────────────
 
 if __name__ == "__main__":
