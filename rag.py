@@ -105,14 +105,15 @@ def answer(query: str, company: str, financials: dict) -> tuple[str, list[tuple[
         return "데이터를 찾을 수 없습니다.", []
 
     chunks, vectorizer, matrix = build_index(company, financials)
-    top3 = search(query, chunks, vectorizer, matrix, k=3)
+    k = min(len(chunks), 6)
+    top3 = search(query, chunks, vectorizer, matrix, k=k)
 
     excerpts = "\n\n".join(
         f"[{chunk['label']}] (유사도 {score:.4f})\n{chunk['text']}"
         for score, chunk in top3
     )
 
-    prompt = f"""아래 발췌 3개만 사용해서 질문에 한국어로 답하세요.
+    prompt = f"""아래 발췌를 사용해서 질문에 한국어로 답하세요.
 발췌에 없는 수치나 연도는 절대 추측하지 마세요. 모르면 "정보 부족"이라고 하세요.
 
 발췌:
@@ -130,8 +131,9 @@ def answer(query: str, company: str, financials: dict) -> tuple[str, list[tuple[
 retrieve = search
 
 def answer_with_rag(query: str, financials: dict, company: str):
-    """app.py 호출 규약(query, financials, company) 대응 래퍼."""
-    return answer(query, company, financials)
+    """app.py 호출 규약(query, financials, company) 대응 래퍼. (top3, reply) 순서로 반환."""
+    reply, top3 = answer(query, company, financials)
+    return top3, reply
 
 
 # ── 단독 실행 테스트 ──────────────────────────────────────────────────────
