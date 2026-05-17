@@ -52,15 +52,80 @@ def _cagr_from_income(income: dict, key: str = "revenue", years: int = 3) -> flo
     return (end / start) ** (1 / n) - 1
 
 
-def _avg_margin_from_income(income: dict, years: int = 3) -> float | None:
+def _mad_outliers(
+    indexed: list[tuple[int, float]],
+    threshold_pp: float = 0.10,
+) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
+    """
+    MAD(Median Absolute Deviation) 기반 이상치 감지.
+    - n >= 4: 수정 Z점수(|0.6745*(xi-median)/MAD| > 3.0) 방식
+    - n == 3: 중앙값 ± threshold_pp 고정 임계값 방식
+    Returns: (filtered, excluded)  — excluded가 비어있으면 이상치 없음.
+    최소 2개 유지 보장.
+    """
+    import statistics as _st
+    n = len(indexed)
+    if n < 3:
+        return indexed, []
+
+    values = [v for _, v in indexed]
+    med    = _st.median(values)
+
+    if n >= 4:
+        mad = _st.median([abs(v - med) for v in values])
+        if mad == 0:
+            return indexed, []
+        mod_z = [0.6745 * (v - med) / mad for v in values]
+        filtered = [(k, v) for (k, v), mz in zip(indexed, mod_z) if abs(mz) <= 3.0]
+        excluded = [(k, v) for (k, v), mz in zip(indexed, mod_z) if abs(mz) > 3.0]
+    else:
+        filtered = [(k, v) for k, v in indexed if abs(v - med) <= threshold_pp]
+        excluded = [(k, v) for k, v in indexed if abs(v - med) > threshold_pp]
+
+    if len(filtered) < 2:
+        return indexed, []
+    return filtered, excluded
+
+
+def _avg_margin_from_income(income: dict, years: int = 5) -> tuple[float | None, list[str]]:
+    """
+    영업이익률 평균 + MAD 이상치 자동 제외.
+    Returns: (avg_margin, exclusion_notes)
+    """
+    import statistics as _st
+
     sorted_years = sorted(income.keys())[-years:]
-    margins = []
+    year_margins: list[tuple[int, float]] = []
     for yr in sorted_years:
         rev = income[yr].get("revenue")
         op  = income[yr].get("operating_profit")
         if rev and op is not None and rev > 0:
-            margins.append(op / rev)
-    return sum(margins) / len(margins) if margins else None
+            year_margins.append((yr, op / rev))
+
+    if not year_margins:
+        return None, []
+
+    filtered, excluded = _mad_outliers(year_margins, threshold_pp=0.10)
+    exclusion_notes: list[str] = []
+
+    if excluded:
+        values    = [m for _, m in year_margins]
+        med       = _st.median(values)
+        clean_avg = sum(m for _, m in filtered) / len(filtered)
+        for yr, m in excluded:
+            cause = ("업황 침체·대규모 일회성 손실 등 일시적 역풍"
+                     if m < med else
+                     "일회성 이익·자산 매각 등 일시적 순풍")
+            exclusion_notes.append(
+                f"[영업이익률 이상치 제외] {yr}년 영업이익률({m:.1%})이 "
+                f"다른 연도 중위값({med:.1%}) 대비 크게 이탈한 이상치로 감지되었습니다 "
+                f"({cause}). "
+                f"이상치 제외 후 평균 영업이익률: {clean_avg:.1%}"
+            )
+        year_margins = filtered
+
+    avg = sum(m for _, m in year_margins) / len(year_margins)
+    return avg, exclusion_notes
 
 
 # ── 성장 프로파일 분류 ────────────────────────────────────────────────────
@@ -91,50 +156,79 @@ def classify_growth_profile(income: dict, terminal_growth_rate: float = 0.015) -
             "note": "데이터 부족으로 기본 성장률 5%를 사용했습니다.",
         }
 
-    # 최근 3년 CAGR
+    # 최근 3년 CAGR (endpoint 기반)
     recent = revenues[-min(4, len(revenues)):]
     n      = len(recent) - 1
     cagr   = (recent[-1] / recent[0]) ** (1 / n) - 1 if recent[0] > 0 else 0.0
 
-    # 연도별 성장률 변동성
+    # 연도별 YoY 성장률
     yoy = []
     for i in range(1, len(revenues)):
         if revenues[i - 1] > 0:
             yoy.append((revenues[i] - revenues[i - 1]) / revenues[i - 1])
     volatile = (statistics.stdev(yoy) >= 0.25) if len(yoy) >= 2 else False
 
+    # ── 성장률 이상치 탐지 ─────────────────────────────────────────────────
+    # 업황 급락·반등처럼 특정 YoY 구간이 극단적으로 벗어날 때 정제 성장률 사용
+    effective_cagr      = cagr
+    growth_outlier_note = ""
+
+    yoy_indexed = list(enumerate(yoy))   # [(0, g0), (1, g1), ...]
+    clean_indexed, out_indexed = _mad_outliers(yoy_indexed, threshold_pp=0.15)
+
+    if out_indexed:
+        med_yoy        = statistics.median(yoy)
+        effective_cagr = statistics.mean([g for _, g in clean_indexed])
+        excluded_desc  = []
+        for idx, g in out_indexed:
+            if idx < len(sorted_years) and idx + 1 < len(sorted_years):
+                y_from    = sorted_years[idx]
+                y_to      = sorted_years[idx + 1]
+                direction = "급락" if g < med_yoy else "급등"
+                cause     = ("업황 침체·일회성 손실 등 일시적 역풍"
+                             if g < med_yoy else
+                             "인수합병·일회성 매출 급증 등 일시적 순풍")
+                excluded_desc.append(f"{y_from}→{y_to}년 {g:.1%}({direction}·{cause})")
+        growth_outlier_note = (
+            f"[성장률 이상치 제외] {', '.join(excluded_desc)} 구간이 "
+            f"다른 연도 성장률 중위값({med_yoy:.1%}) 대비 크게 벗어납니다. "
+            f"일시적 이벤트로 판단하여 해당 구간을 제외했습니다. "
+            f"정제 성장률({effective_cagr:.1%})을 DCF 시나리오 기준으로 사용합니다 "
+            f"(원래 CAGR {cagr:.1%}은 참고용)."
+        )
+
     tgr = terminal_growth_rate
 
-    if cagr > 0.30:
+    ec = effective_cagr  # 시나리오 계산에 사용할 정제 CAGR
+
+    if ec > 0.30:
         profile = "high_growth_fade_down"
         if volatile:
-            # 변동성 큰 고성장: cap을 한 단계 더 강하게
             rates = [
-                min(cagr, 0.25),
-                min(cagr * 0.55, 0.18),
-                min(cagr * 0.38, 0.12),
-                min(cagr * 0.25, 0.08),
-                min(cagr * 0.15, 0.05),
+                min(ec, 0.25),
+                min(ec * 0.55, 0.18),
+                min(ec * 0.38, 0.12),
+                min(ec * 0.25, 0.08),
+                min(ec * 0.15, 0.05),
             ]
-            note = (f"최근 CAGR {cagr:.1%}이 30%를 초과하고 연도별 변동성이 큽니다. "
-                    "CAGR 직접 적용 금지 — 변동성 조정 보수 시나리오를 적용했습니다.")
+            note = (f"정제 CAGR {ec:.1%}이 30%를 초과하고 연도별 변동성이 큽니다. "
+                    "변동성 조정 보수 시나리오를 적용했습니다.")
         else:
             rates = [
-                min(cagr, 0.35),
-                min(cagr * 0.70, 0.25),
-                min(cagr * 0.50, 0.18),
-                min(cagr * 0.35, 0.12),
-                min(cagr * 0.25, 0.08),
+                min(ec, 0.35),
+                min(ec * 0.70, 0.25),
+                min(ec * 0.50, 0.18),
+                min(ec * 0.35, 0.12),
+                min(ec * 0.25, 0.08),
             ]
-            note = f"최근 CAGR {cagr:.1%}이 30%를 초과해 고성장 정상화 시나리오를 적용했습니다."
+            note = f"정제 CAGR {ec:.1%}이 30%를 초과해 고성장 정상화 시나리오를 적용했습니다."
 
-    elif cagr > 0.05:
+    elif ec > 0.05:
         profile = "moderate_growth_convergence"
         if volatile:
-            # 변동성 큰 중성장: CAGR 대신 median 기반 cap 적용
             import statistics as _st
-            med = _st.median(yoy) if yoy else cagr
-            base = min(med, cagr * 0.80)
+            med = _st.median(yoy) if yoy else ec
+            base = min(med, ec * 0.80)
             rates = [
                 base,
                 base * 0.75,
@@ -142,46 +236,48 @@ def classify_growth_profile(income: dict, terminal_growth_rate: float = 0.015) -
                 base * 0.35,
                 max(tgr, base * 0.20),
             ]
-            note = (f"CAGR {cagr:.1%}이나 연도별 변동성이 큽니다. "
+            note = (f"정제 CAGR {ec:.1%}이나 연도별 변동성이 큽니다. "
                     f"median 성장률({med:.1%}) 기반 보수 시나리오를 적용했습니다.")
         else:
             rates = [
-                cagr,
-                cagr * 0.75,
-                cagr * 0.55,
-                cagr * 0.35,
-                max(tgr, cagr * 0.20),
+                ec,
+                ec * 0.75,
+                ec * 0.55,
+                ec * 0.35,
+                max(tgr, ec * 0.20),
             ]
-            note = f"CAGR {cagr:.1%} 기반으로 terminal growth 방향 점진 수렴을 적용했습니다."
+            note = f"정제 CAGR {ec:.1%} 기반으로 terminal growth 방향 점진 수렴을 적용했습니다."
 
-    elif cagr >= 0:
+    elif ec >= 0:
         profile = "low_growth_stable"
         rates   = [
-            cagr,
-            max(cagr * 0.90, tgr),
-            max(cagr * 0.75, tgr),
-            max(cagr * 0.60, tgr),
+            ec,
+            max(ec * 0.90, tgr),
+            max(ec * 0.75, tgr),
+            max(ec * 0.60, tgr),
             tgr,
         ]
-        note = f"저성장 기업({cagr:.1%})으로 terminal growth 방향 안정적 수렴을 적용했습니다."
+        note = f"정제 CAGR {ec:.1%} 기반 저성장 — terminal growth 방향 안정적 수렴을 적용했습니다."
 
     else:
         profile = "negative_growth_recovery"
         rates   = [
-            cagr,
-            cagr * 0.50,
+            ec,
+            ec * 0.50,
             0.00,
             tgr,
             tgr,
         ]
-        note = f"역성장 기업({cagr:.1%})으로 0% 수렴 회복 시나리오를 적용했습니다."
+        note = f"정제 CAGR {ec:.1%} 기반 역성장 — 0% 수렴 회복 시나리오를 적용했습니다."
 
     return {
         "profile":             profile,
         "historical_cagr":     round(cagr, 4),
+        "effective_cagr":      round(effective_cagr, 4),
         "yearly_growth_rates": [round(r, 4) for r in rates],
         "volatile":            volatile,
         "note":                note,
+        "growth_outlier_note": growth_outlier_note,
     }
 
 
@@ -315,9 +411,12 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
     growth_info = classify_growth_profile(income)
     if growth_info.get("volatile"):
         warnings.append(growth_info["note"])
+    if growth_info.get("growth_outlier_note"):
+        warnings.append(growth_info["growth_outlier_note"])
 
     # ── 영업이익률 ───────────────────────────────────────────────────────
-    margin = _avg_margin_from_income(income, 3)
+    margin, margin_outlier_notes = _avg_margin_from_income(income)
+    warnings.extend(margin_outlier_notes)
     if margin is None:
         margin = 0.10
         warnings.append("평균 영업이익률 계산 불가 — 기본값 10% 사용")
@@ -382,9 +481,10 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
         full_wacc_result = calculate_full_wacc(dcf_inputs, capm_discount_rate, tax_rate_val)
 
     return {
-        "revenue_growth_rate":      round(cagr, 4),
+        "revenue_growth_rate":      round(growth_info["effective_cagr"], 4),
         "revenue_growth_rates":     growth_info["yearly_growth_rates"],
         "historical_revenue_cagr":  growth_info["historical_cagr"],
+        "effective_revenue_cagr":   growth_info["effective_cagr"],
         "growth_profile":           growth_info["profile"],
         "growth_assumption_note":   growth_info["note"],
         "operating_margin":         round(margin, 4),
@@ -571,6 +671,7 @@ if __name__ == "__main__":
     asm = result.get("assumptions", {})
     print(f"  성장 프로파일  : {asm.get('growth_profile')}")
     print(f"  역사적 CAGR    : {asm.get('historical_revenue_cagr', 0):.2%}")
+    print(f"  정제 CAGR      : {asm.get('effective_revenue_cagr', 0):.2%}")
     rates = asm.get('revenue_growth_rates', [])
     print(f"  연도별 성장률  : {[f'{r:.1%}' for r in rates]}")
     print(f"  영업이익률     : {asm.get('operating_margin', 0):.2%}")
