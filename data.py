@@ -160,10 +160,10 @@ def _fetch_from_dart(company_name: str) -> dict:
 
     result = {}
     for year in range(2021, 2026):
-        year_data = _extract_year(corp_code, year, "CFS")
+        year_data = _extract_year(corp_code, year, "OFS")
         if not year_data or not {"매출액", "영업이익", "순이익"}.issubset(year_data):
-            ofs = _extract_year(corp_code, year, "OFS")
-            for k, v in ofs.items():
+            cfs = _extract_year(corp_code, year, "CFS")
+            for k, v in cfs.items():
                 year_data.setdefault(k, v)
         if {"매출액", "영업이익", "순이익"}.issubset(year_data):
             result[year] = year_data
@@ -211,7 +211,7 @@ def _load_from_db(company_name: str) -> dict:
 
 
 def get_financials(company_name: str) -> dict:
-    """6개년(2020~2025) 재무 데이터. 키는 문자열 연도. 단위: 억원."""
+    """6개년(2020~2025) 재무 데이터. 키는 문자열 연도. 단위: 백만원."""
     cached = _load_from_db(company_name)
     if cached:
         return cached

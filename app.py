@@ -754,10 +754,10 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             ),
                         ])
                         fig_cmp.update_layout(
-                            title=f"{metric} 비교 (억원)",
+                            title=f"{metric} 비교 (백만원)",
                             barmode="group",
                             xaxis=dict(tickmode="array", tickvals=common_years, ticktext=[str(y) for y in common_years]),
-                            yaxis_title="억원",
+                            yaxis_title="백만원",
                             height=400,
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                         )
