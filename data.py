@@ -5,7 +5,7 @@ import requests
 import dart_fss as dart
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 DB_PATH = "financials.db"
 DART_API_KEY = os.environ["DART_API_KEY"]
@@ -138,7 +138,7 @@ def _fetch_from_dart(company_name: str) -> dict:
         return {}
 
     result = {}
-    for year in range(2020, 2025):
+    for year in range(2020, 2026):
         year_data = _extract_year(corp_code, year, "CFS")
         if not year_data or not {"매출액", "영업이익", "순이익"}.issubset(year_data):
             ofs = _extract_year(corp_code, year, "OFS")
@@ -190,7 +190,7 @@ def _load_from_db(company_name: str) -> dict:
 
 
 def get_financials(company_name: str) -> dict:
-    """5개년(2020~2024) 재무 데이터. 키는 문자열 연도. 단위: 억원."""
+    """6개년(2020~2025) 재무 데이터. 키는 문자열 연도. 단위: 억원."""
     cached = _load_from_db(company_name)
     if cached:
         return cached
