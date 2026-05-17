@@ -492,7 +492,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             st.dataframe(styled_df, use_container_width=True)
 
             # 3지표 추이 막대 차트 — 매출액 꼭짓점 점+선 항상 표시
-            _years = df["연도"].tolist()
+            _years = [int(y) for y in df["연도"].tolist()]
             _bar_cols  = ["매출액 (백만원)", "영업이익 (백만원)", "순이익 (백만원)"]
             _bar_names = ["매출액", "영업이익", "순이익"]
             _bar_clrs  = ["#1b5e20", "#4caf50", "#aed581"]
