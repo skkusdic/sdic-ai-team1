@@ -5,6 +5,20 @@
 
 from __future__ import annotations
 from claude_client import ask
+from data import get_financials
+from db import init_db, load_financials, save_financials
+
+
+def _fetch(company_name: str) -> dict:
+    """캐시 → DART 순으로 재무 데이터 조회."""
+    init_db()
+    cached = load_financials(company_name)
+    if cached:
+        return cached
+    financials = get_financials(company_name)
+    if financials:
+        save_financials(company_name, financials)
+    return financials or {}
 
 
 def _compute_metrics(financials: dict) -> dict:
@@ -39,20 +53,13 @@ def _compute_metrics(financials: dict) -> dict:
     return result
 
 
-def compare_companies(
-    base_name: str,
-    base_financials: dict,
-    peer_name: str,
-    peer_financials: dict,
-) -> dict:
+def compare_companies(base_company: str, peer_company: str) -> dict:
     """
-    두 기업의 재무 데이터를 비교.
+    두 기업명을 받아 재무 데이터를 조회하고 비교.
 
     Args:
-        base_name: 기준 기업명
-        base_financials: {연도: {"매출액": ..., "영업이익": ..., "순이익": ...}}
-        peer_name: 비교 기업명
-        peer_financials: 동일 구조
+        base_company: 기준 기업명 (예: "에이피알")
+        peer_company: 비교 기업명 (예: "카카오")
 
     Returns: {
         "base": {"name": str, "metrics": dict},
@@ -62,6 +69,12 @@ def compare_companies(
         "ai_summary": str,        # Claude 3줄 요약
     }
     """
+    base_financials = _fetch(base_company)
+    peer_financials = _fetch(peer_company)
+
+    base_name = base_company
+    peer_name = peer_company
+
     base_metrics = _compute_metrics(base_financials)
     peer_metrics = _compute_metrics(peer_financials)
 
