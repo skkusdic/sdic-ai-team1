@@ -618,16 +618,18 @@ def _search_naver_news(company_name: str, year: int, max_results: int = 8) -> li
                     "X-Naver-Client-Id":     client_id,
                     "X-Naver-Client-Secret": client_secret,
                 },
-                params={"query": q, "display": 5, "sort": "date"},
+                params={"query": q, "display": 5, "sort": "sim"},
                 timeout=10,
             )
             for item in resp.json().get("items", []):
                 # HTML 태그 제거 (BeautifulSoup 재사용)
                 title = BeautifulSoup(item.get("title", ""), "html.parser").get_text()
+                desc  = BeautifulSoup(item.get("description", ""), "html.parser").get_text()
                 if not title or title in seen:
                     continue
-                # 해당 연도 기사만 수집
-                if str(year) not in item.get("pubDate", ""):
+                # 제목 또는 본문에 해당 연도가 언급된 기사만 수집
+                # (Naver는 과거 연도 관련 기사를 최신 날짜로 반환하므로 pubDate 필터 대신 사용)
+                if str(year) not in title and str(year) not in desc:
                     continue
                 seen.add(title)
                 news.append({
