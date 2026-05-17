@@ -623,11 +623,17 @@ def get_dcf_inputs(company_name: str) -> dict:
             val = _match_account(items, divs, cands)
             return abs(val) if val is not None else None
 
+        # DART XBRL 표준 태그에 따라 회사별 표기가 다름:
+        # ifrs-full_AdjustmentsForDepreciationExpense → "유형자산상각비" (APR 등)
+        # 자체 태그 → "감가상각비" / "유형자산감가상각비" 등
         _dep  = _match_account(latest_items, ("CF",),
-                               ["감가상각비", "유형자산감가상각비",
-                                "감가상각비및상각비", "감가상각및상각비"])
-        _amor = _match_account(latest_items, ("CF",), ["무형자산상각비"])
-        _roua = _match_account(latest_items, ("CF",), ["사용권자산상각비"])
+                               ["유형자산상각비",      # IFRS XBRL 표준 (APR, 다수)
+                                "감가상각비",          # 일반적 표현
+                                "유형자산감가상각비",
+                                "감가상각비및상각비",   # 유형+무형 합산
+                                "감가상각및상각비"])
+        _amor = _match_account(latest_items, ("CF",), ["무형자산상각비", "무형자산상각"])
+        _roua = _match_account(latest_items, ("CF",), ["사용권자산상각비", "사용권자산상각"])
 
         # 합산 계정이 있는지 확인 — 있으면 그것만, 없으면 유형+무형 합산
         _dep_combined_nm = ["감가상각비및상각비", "감가상각및상각비"]
