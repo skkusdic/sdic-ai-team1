@@ -218,14 +218,6 @@ st.markdown("""
     }
 
     setTimeout(init, 900);
-
-    function autoPlayPlotly() {
-        const doc = window.parent.document;
-        const rects = doc.querySelectorAll('.updatemenu-item-rect');
-        if (!rects.length) { setTimeout(autoPlayPlotly, 600); return; }
-        rects.forEach(r => r.dispatchEvent(new MouseEvent('click', {bubbles: true})));
-    }
-    setTimeout(autoPlayPlotly, 2500);
 })();
 </script>
 """, unsafe_allow_html=True)
@@ -499,87 +491,132 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             st.markdown("---")
             st.dataframe(styled_df, use_container_width=True)
 
-            # 3지표 추이 막대 차트 + 꼭짓점 연결선 애니메이션
+            # 3지표 추이 막대 차트 — 매출액 꼭짓점 점+선 항상 표시
             _years = df["연도"].tolist()
             _bar_cols  = ["매출액 (백만원)", "영업이익 (백만원)", "순이익 (백만원)"]
             _bar_names = ["매출액", "영업이익", "순이익"]
             _bar_clrs  = ["#1b5e20", "#4caf50", "#aed581"]
 
             _bar_traces = [
-                go.Bar(name=nm, x=_years, y=df[col].tolist(), marker_color=clr, showlegend=True)
+                go.Bar(name=nm, x=_years, y=df[col].tolist(), marker_color=clr,
+                       showlegend=True)
                 for col, nm, clr in zip(_bar_cols, _bar_names, _bar_clrs)
             ]
-            _frames_bar = [
-                go.Frame(data=_bar_traces + [
-                    go.Scatter(
-                        x=_years[:i], y=df[col].tolist()[:i],
-                        mode="lines+markers",
-                        line=dict(color=clr, width=2),
-                        marker=dict(size=8, color=clr),
-                        showlegend=False,
-                    )
-                    for col, clr in zip(_bar_cols, _bar_clrs)
-                ])
-                for i in range(1, len(_years) + 1)
-            ]
-            fig_trend = go.Figure(
-                data=_bar_traces + [
-                    go.Scatter(
-                        x=[_years[0]], y=[df[col].tolist()[0]],
-                        mode="markers",
-                        line=dict(color=clr, width=2),
-                        marker=dict(size=8, color=clr),
-                        showlegend=False,
-                    )
-                    for col, clr in zip(_bar_cols, _bar_clrs)
-                ],
-                frames=_frames_bar,
+            # 매출액 막대 위 가운데에 점+선 — 그룹 내 첫 번째 막대 x 오프셋 직접 계산
+            _bargap = 0.2
+            _n = len(_bar_cols)  # 3
+            _bar_w = (1.0 - _bargap) / _n
+            _rev_offset = (0 - (_n - 1) / 2) * _bar_w
+            _rev_x  = [y + _rev_offset for y in _years]
+            _rev_y  = df["매출액 (백만원)"].tolist()
+
+            _rev_line = go.Scatter(
+                name="매출액 추이선",
+                x=_rev_x, y=_rev_y,
+                mode="lines+markers",
+                line=dict(color="#1b5e20", width=2.5),
+                marker=dict(size=10, color="#1b5e20", line=dict(width=2, color="white")),
+                showlegend=True,
             )
+            fig_trend = go.Figure(data=_bar_traces + [_rev_line])
             fig_trend.update_layout(
                 title=f"{company_name} 매출액 / 영업이익 / 순이익 추이",
                 barmode="group",
+                bargap=0.2,
                 xaxis=dict(tickmode="array", tickvals=_years, ticktext=[str(y) for y in _years]),
                 yaxis=dict(title="백만원"),
                 height=800,
-                updatemenus=[{"type": "buttons", "showactive": False,
-                              "y": 0, "x": 0, "xanchor": "left",
-                              "bgcolor": "rgba(0,0,0,0)", "bordercolor": "rgba(0,0,0,0)",
-                              "font": {"color": "rgba(0,0,0,0)", "size": 1},
-                              "buttons": [{"label": "▶", "method": "animate",
-                                           "args": [None, {"frame": {"duration": 600, "redraw": True},
-                                                           "fromcurrent": True,
-                                                           "transition": {"duration": 400, "easing": "linear"}}]}]}],
             )
             st.plotly_chart(fig_trend, use_container_width=True)
 
-            # 영업이익률 차트 (좌→우 애니메이션)
-            _frames_margin = [
-                go.Frame(data=[go.Scatter(
-                    x=_years[:i], y=df["영업이익률 (%)"].tolist()[:i],
-                    mode="lines+markers", showlegend=False,
-                    line=dict(color="#FF6B6B", width=2), marker=dict(size=7),
-                )])
-                for i in range(1, len(_years) + 1)
-            ]
-            fig_margin = go.Figure(
-                data=[go.Scatter(
-                    x=[_years[0]], y=[df["영업이익률 (%)"].tolist()[0]],
-                    mode="markers", showlegend=False,
-                    line=dict(color="#FF6B6B", width=2), marker=dict(size=7),
-                )],
-                frames=_frames_margin,
+            # 영업이익률 막대 차트 + 상단 점 연결선
+            _mg_vals = df["영업이익률 (%)"].tolist()
+            _mg_bar = go.Bar(
+                name="영업이익률",
+                x=_years, y=_mg_vals,
+                marker_color="#4caf50",
+                width=_bar_w,
+                showlegend=True,
             )
+            _mg_line = go.Scatter(
+                name="영업이익률 추이선",
+                x=_years, y=_mg_vals,
+                mode="lines+markers",
+                line=dict(color="#1b5e20", width=2.5),
+                marker=dict(size=10, color="#1b5e20", line=dict(width=2, color="white")),
+                showlegend=True,
+            )
+            fig_margin = go.Figure(data=[_mg_bar, _mg_line])
             fig_margin.update_layout(
                 title=f"{company_name} 영업이익률 추이",
-                yaxis_title="영업이익률 (%)",
-                updatemenus=[{"type": "buttons", "showactive": False,
-                              "y": 1.15, "x": 0.0, "xanchor": "left",
-                              "buttons": [{"label": "▶", "method": "animate",
-                                           "args": [None, {"frame": {"duration": 700, "redraw": True},
-                                                           "fromcurrent": True,
-                                                           "transition": {"duration": 500, "easing": "linear"}}]}]}],
+                xaxis=dict(tickmode="array", tickvals=_years, ticktext=[str(y) for y in _years]),
+                yaxis=dict(title="영업이익률 (%)"),
             )
             st.plotly_chart(fig_margin, use_container_width=True)
+
+            # 차트 선/점 SVG path에 IntersectionObserver + CSS 애니메이션 적용
+            st.markdown("""
+<script>
+(function() {
+    var done = new WeakSet();
+
+    function animateChart(chart) {
+        if (done.has(chart)) return;
+        var lines = chart.querySelectorAll('.js-line');
+        if (!lines.length) return;
+        done.add(chart);
+
+        // 선·점 초기 숨김
+        lines.forEach(function(p) {
+            try {
+                var len = p.getTotalLength();
+                if (!len) return;
+                p.style.transition = 'none';
+                p.style.strokeDasharray = len + ' ' + len;
+                p.style.strokeDashoffset = len;
+            } catch(e) {}
+        });
+        chart.querySelectorAll('.scatter .points path').forEach(function(pt) {
+            pt.style.transition = 'none';
+            pt.style.opacity = '0';
+        });
+
+        new IntersectionObserver(function(entries, obs) {
+            entries.forEach(function(entry) {
+                if (!entry.isIntersecting) return;
+                var el = entry.target;
+                el.querySelectorAll('.js-line').forEach(function(p) {
+                    try {
+                        p.getBoundingClientRect();
+                        p.style.transition = 'stroke-dashoffset 1.4s ease';
+                        p.style.strokeDashoffset = '0';
+                    } catch(e) {}
+                });
+                el.querySelectorAll('.scatter .points path').forEach(function(pt, i) {
+                    pt.style.transition = 'opacity 0.4s ease ' + (1.2 + i * 0.15) + 's';
+                    pt.style.opacity = '1';
+                });
+                obs.disconnect();
+            });
+        }, { threshold: 0.25 }).observe(chart);
+    }
+
+    function scan() {
+        var doc = window.parent.document;
+        doc.querySelectorAll('.js-plotly-plot').forEach(animateChart);
+    }
+
+    // 최초 실행 + Streamlit 재렌더 시 재감지
+    setTimeout(scan, 600);
+    setTimeout(scan, 1400);
+    var t = null;
+    new MutationObserver(function() {
+        clearTimeout(t);
+        t = setTimeout(scan, 300);
+    }).observe(window.parent.document.body, { childList: true, subtree: true });
+})();
+</script>
+""", unsafe_allow_html=True)
 
             # YoY 성장률 표
             st.subheader("YoY 성장률")
