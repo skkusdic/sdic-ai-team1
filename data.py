@@ -319,28 +319,72 @@ def _match_account(items: list, sj_divs: tuple, candidates: list) -> int | None:
 
 
 def _find_corp_obj(company_name: str):
-    """회사명으로 DART 기업 객체 반환. 없으면 None."""
+    """회사명으로 DART 기업 객체 반환. 없으면 None.
+
+    순서: 정확 일치 → Claude 공식명 변환 + 정확 일치 → 부분 일치.
+    부분 일치를 Claude 변환 이전에 하면 약칭이 엉뚱한 기업과 매칭될 수 있어
+    반드시 정확 일치 실패 후에만 부분 일치를 시도한다.
+    """
     corp_list = _get_corp_list()
     raw = company_name.strip()
-    normalized = _normalize_name(raw)
-    candidates = list(dict.fromkeys([normalized, raw, normalized.replace(" ", ""), raw.replace(" ", "")]))
 
-    for cand in candidates:
-        results = corp_list.find_by_corp_name(cand, exactly=True) or []
-        listed = [r for r in results if r.stock_code]
-        if listed:
-            return listed[0]
-        if results:
-            return results[0]
+    def _exact(name: str):
+        for cand in [name, name.replace(" ", "")]:
+            results = corp_list.find_by_corp_name(cand, exactly=True) or []
+            listed = [r for r in results if r.stock_code]
+            if listed:
+                return listed[0]
+            if results:
+                return results[0]
+        return None
 
-    for cand in candidates:
-        results = corp_list.find_by_corp_name(cand, exactly=False) or []
-        listed = [r for r in results if r.stock_code]
-        pool = listed if listed else results
-        if pool:
-            return min(pool, key=lambda r: len(r.corp_name))
+    def _partial(name: str):
+        for cand in [name, name.replace(" ", "")]:
+            results = corp_list.find_by_corp_name(cand, exactly=False) or []
+            listed = [r for r in results if r.stock_code]
+            pool = listed if listed else results
+            if pool:
+                return min(pool, key=lambda r: len(r.corp_name))
+        return None
 
-    return None
+    # 1단계: 정확 일치
+    result = _exact(raw)
+    if result:
+        return result
+
+    # 2단계: Claude로 DART 공식명 변환 후 정확 일치 재시도 (영문·한국어 약칭 모두)
+    official = raw
+    try:
+        converted = ask(
+            f"'{raw}'의 DART(금융감독원 전자공시시스템) 등록 정식 회사명을 알려주세요. "
+            "정식 회사명만 답하고 다른 말은 절대 쓰지 마세요.",
+            max_tokens=30,
+        ).strip()
+        if converted and converted != raw:
+            # "주식회사", "(주)", "(유)" 등 법인 접미사 제거 후 추가 후보 생성
+            _suffixes = ["주식회사", "(주)", "(유)", "(합)", "㈜"]
+            _prefixes = ["주식회사 "]
+            stripped = converted
+            for s in _suffixes:
+                stripped = stripped.replace(s, "").strip()
+            for p in _prefixes:
+                if stripped.startswith(p):
+                    stripped = stripped[len(p):].strip()
+
+            official = converted
+            for cand in dict.fromkeys([converted, stripped]):
+                if not cand or cand == raw:
+                    continue
+                result = _exact(cand)
+                if result:
+                    print(f"[_find_corp_obj] '{raw}' → '{cand}' 으로 변환 후 검색")
+                    return result
+            official = stripped or converted  # 부분 일치용은 접미사 제거된 이름 사용
+    except Exception:
+        pass
+
+    # 3단계: 부분 일치 (공식명 기준 — 변환 성공 시 공식명, 아니면 원본)
+    return _partial(official)
 
 
 def _fetch_shares(corp_code: str) -> dict:
