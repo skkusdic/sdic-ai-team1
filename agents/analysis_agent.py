@@ -15,7 +15,7 @@ def analyze(financials: dict, company: str = "") -> str:
     if company:
         report_text = get_business_report_text(company)
         if report_text:
-            return summarize_business_report(report_text, company)
+            return summarize_business_report(report_text, company, financials=financials)
 
     # fallback: 재무 수치 기반 분석
     rows = "\n".join(

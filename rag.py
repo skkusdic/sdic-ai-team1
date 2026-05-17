@@ -132,31 +132,63 @@ def answer(query: str, company: str, financials: dict) -> tuple[str, list[tuple[
 _MAX_REPORT_CHARS = 15_000  # claude-haiku-4-5 비용 제어용 상한
 
 
-def summarize_business_report(text: str, company: str) -> str:
+def _financials_summary_text(company: str, financials: dict) -> str:
+    """재무 데이터를 프롬프트에 삽입할 요약 텍스트로 변환."""
+    if not financials:
+        return ""
+    lines = []
+    for year, d in sorted(financials.items()):
+        rev = d.get("매출액", 0)
+        op = d.get("영업이익", 0)
+        net = d.get("순이익", 0)
+        margin = round(op / rev * 100, 1) if rev else 0
+        lines.append(
+            f"  {year}년: 매출 {rev:,}억원 / 영업이익 {op:,}억원 (이익률 {margin}%) / 순이익 {net:,}억원"
+        )
+    return f"{company} 재무 실적 ({min(financials)}~{max(financials)}년):\n" + "\n".join(lines)
+
+
+def summarize_business_report(text: str, company: str, financials: dict = None) -> str:
     """
     DART 사업보고서 '사업의 내용' 텍스트를 받아 핵심 요약문 반환.
+    financials가 있으면 재무 수치와 연계한 통합 분석 수행.
     텍스트가 없으면 빈 문자열 반환.
     """
     if not text or not text.strip():
         return ""
 
-    # 비용·속도 제어: 상한 초과 시 앞부분만 사용
     truncated = text[:_MAX_REPORT_CHARS]
     if len(text) > _MAX_REPORT_CHARS:
         truncated += "\n\n(이하 생략)"
 
+    fin_section = ""
+    fin_instruction = ""
+    if financials:
+        fin_section = f"\n[재무 데이터]\n{_financials_summary_text(company, financials)}\n"
+        fin_instruction = (
+            "6. 사업 전략과 재무 성과 연계 분석: 위 재무 데이터와 사업 내용을 연결해, "
+            "실제 매출·이익 추세가 사업 전략과 어떻게 맞닿아 있는지 3~4문장으로 서술\n"
+            "7. 종합 의견: 이 기업의 현재 포지션과 향후 주목할 점 2~3문장\n"
+        )
+    else:
+        fin_instruction = "6. 종합 의견: 이 기업의 현재 포지션과 향후 주목할 점 2~3문장\n"
+
     prompt = (
         f"아래는 {company}의 DART 사업보고서 '사업의 내용' 섹션 원문입니다.\n"
-        "발췌에 없는 내용은 절대 추측하지 말고, 원문에 있는 내용만 사용해 핵심을 요약하세요.\n\n"
-        "요약 형식:\n"
-        "1. 주요 사업 영역 (2~3줄)\n"
-        "2. 핵심 제품·서비스 (2~3줄)\n"
-        "3. 경쟁 환경 및 전략 (2~3줄)\n\n"
-        f"[원문]\n{truncated}\n\n"
-        "위 원문만 근거로 한국어로 요약하세요."
+        "발췌 및 재무 데이터에 없는 내용은 절대 추측하지 말고, 주어진 정보만 근거로 분석하세요.\n"
+        f"{fin_section}\n"
+        "다음 형식으로 한국어로 상세히 작성하세요 (각 항목 3~4문장):\n\n"
+        "1. 주요 사업 영역: 이 기업이 영위하는 핵심 사업 분야와 그 비중\n"
+        "2. 핵심 제품·서비스: 대표 제품/서비스의 특징과 차별점\n"
+        "3. 고객 및 시장: 주요 고객층, 타깃 시장, 유통 채널\n"
+        "4. 경쟁 환경: 주요 경쟁사 현황과 시장 내 위치\n"
+        "5. 성장 전략: 향후 사업 확장 계획 및 핵심 전략 방향\n"
+        f"{fin_instruction}"
+        f"\n[원문]\n{truncated}\n\n"
+        "위 정보만 근거로 분석하세요."
     )
 
-    return ask(prompt, max_tokens=600)
+    return ask(prompt, max_tokens=1200)
 
 
 # ── app.py 호환 별칭 ──────────────────────────────────────────────────────
