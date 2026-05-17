@@ -5,6 +5,7 @@ import sqlite3
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 # Streamlit Cloud Secrets → os.environ 동기화
 # 로컬은 .env(python-dotenv)로 읽히므로 이미 설정됨; Cloud는 여기서 주입
@@ -131,6 +132,50 @@ hr {
     transition: opacity 0.5s ease, filter 0.5s ease, transform 0.5s ease;
     will-change: opacity, filter, transform;
 }
+
+.kpi-card {
+    background: #ffffff;
+    border: 1px solid #e8e8e8;
+    border-radius: 12px;
+    padding: 20px 24px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    margin-bottom: 8px;
+}
+.kpi-label {
+    font-size: 11px;
+    color: #999;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+.kpi-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin-bottom: 6px;
+    letter-spacing: -0.02em;
+}
+.kpi-delta {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+@keyframes spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.spinner-icon {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border: 2px solid #f59e0b;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+    vertical-align: middle;
+    margin-right: 2px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -173,6 +218,14 @@ st.markdown("""
     }
 
     setTimeout(init, 900);
+
+    function autoPlayPlotly() {
+        const doc = window.parent.document;
+        const rects = doc.querySelectorAll('.updatemenu-item-rect');
+        if (!rects.length) { setTimeout(autoPlayPlotly, 600); return; }
+        rects.forEach(r => r.dispatchEvent(new MouseEvent('click', {bubbles: true})));
+    }
+    setTimeout(autoPlayPlotly, 2500);
 })();
 </script>
 """, unsafe_allow_html=True)
@@ -199,6 +252,20 @@ def delta_pp(curr, prev):
     if prev is not None:
         return f"{curr - prev:+.1f}%p"
     return None
+
+def kpi_card(label, value, delta=None):
+    delta_html = ""
+    if delta:
+        color = "#2e7d32" if delta.startswith("+") else "#dc2626"
+        arrow = "↑" if delta.startswith("+") else "↓"
+        delta_html = f'<div class="kpi-delta" style="color:{color};">{arrow} {delta}</div>'
+    return (
+        f'<div class="kpi-card">'
+        f'<div class="kpi-label">{label}</div>'
+        f'<div class="kpi-value">{value}</div>'
+        f'{delta_html}'
+        f'</div>'
+    )
 
 # ── 헤더: 타이틀 + 로고 ───────────────────────────────────
 col_title, col_logo = st.columns([5, 1])
@@ -244,14 +311,18 @@ with st.sidebar:
     st.markdown("#### 팀 정보")
     st.markdown("**SDIC AI Team 1**")
     st.markdown("분석 기업: **에이피알**")
-    st.markdown("진행 주차: **2주차**")
+    st.markdown("진행 주차: **4주차**")
     st.markdown("---")
     st.markdown("#### 에이전트 상태")
     for key, label in [("data", "Data Agent"), ("analysis", "Analysis Agent"), ("report", "Report Agent")]:
         s = st.session_state.agent_status[key]
+        if s == "실행 중":
+            icon_html = '<span class="spinner-icon"></span>'
+        else:
+            icon_html = f'<span class="agent-icon" style="color:{COLOR[s]};">{ICON[s]}</span>'
         st.markdown(
             f'<div class="agent-status-row">'
-            f'<span class="agent-icon" style="color:{COLOR[s]};">{ICON[s]}</span>'
+            f'{icon_html}'
             f'<span style="color:{COLOR[s]};">{label}</span>'
             f'</div>',
             unsafe_allow_html=True,
@@ -408,50 +479,102 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
         with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.subheader(f"{company_name} 연도별 재무 현황")
+            st.subheader(f"{company_name} 연도별 재무 현황 (억원)")
 
             # KPI 카드 4장
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric(
-                f"매출액 ({latest_year})",
-                f"{rev_curr:,.0f} 억원",
-                delta_pct(rev_curr, rev_prev),
-            )
-            c2.metric(
-                f"영업이익 ({latest_year})",
-                f"{op_curr:,.0f} 억원",
-                delta_pct(op_curr, op_prev),
-            )
-            c3.metric(
-                f"순이익 ({latest_year})",
-                f"{net_curr:,.0f} 억원",
-                delta_pct(net_curr, net_prev),
-            )
-            c4.metric(
-                f"영업이익률 ({latest_year})",
-                f"{mg_curr:.1f}%",
-                delta_pp(mg_curr, mg_prev),
-            )
+            with c1:
+                st.markdown(kpi_card(f"매출액 ({latest_year})", f"{rev_curr:,.0f}", delta_pct(rev_curr, rev_prev)), unsafe_allow_html=True)
+            with c2:
+                st.markdown(kpi_card(f"영업이익 ({latest_year})", f"{op_curr:,.0f}", delta_pct(op_curr, op_prev)), unsafe_allow_html=True)
+            with c3:
+                st.markdown(kpi_card(f"순이익 ({latest_year})", f"{net_curr:,.0f}", delta_pct(net_curr, net_prev)), unsafe_allow_html=True)
+            with c4:
+                st.markdown(kpi_card(f"영업이익률 ({latest_year})", f"{mg_curr:.1f}%", delta_pp(mg_curr, mg_prev)), unsafe_allow_html=True)
 
             st.markdown("---")
             st.dataframe(styled_df, use_container_width=True)
 
-            # 3지표 추이 차트
-            fig_trend = px.line(
-                df, x="연도",
-                y=["매출액 (억원)", "영업이익 (억원)", "순이익 (억원)"],
-                markers=True,
+            # 3지표 추이 막대 차트 + 꼭짓점 연결선 애니메이션
+            _years = df["연도"].tolist()
+            _bar_cols  = ["매출액 (억원)", "영업이익 (억원)", "순이익 (억원)"]
+            _bar_names = ["매출액", "영업이익", "순이익"]
+            _bar_clrs  = ["#1b5e20", "#4caf50", "#aed581"]
+
+            _bar_traces = [
+                go.Bar(name=nm, x=_years, y=df[col].tolist(), marker_color=clr, showlegend=True)
+                for col, nm, clr in zip(_bar_cols, _bar_names, _bar_clrs)
+            ]
+            _frames_bar = [
+                go.Frame(data=_bar_traces + [
+                    go.Scatter(
+                        x=_years[:i], y=df[col].tolist()[:i],
+                        mode="lines+markers",
+                        line=dict(color=clr, width=2),
+                        marker=dict(size=8, color=clr),
+                        showlegend=False,
+                    )
+                    for col, clr in zip(_bar_cols, _bar_clrs)
+                ])
+                for i in range(1, len(_years) + 1)
+            ]
+            fig_trend = go.Figure(
+                data=_bar_traces + [
+                    go.Scatter(
+                        x=[_years[0]], y=[df[col].tolist()[0]],
+                        mode="markers",
+                        line=dict(color=clr, width=2),
+                        marker=dict(size=8, color=clr),
+                        showlegend=False,
+                    )
+                    for col, clr in zip(_bar_cols, _bar_clrs)
+                ],
+                frames=_frames_bar,
+            )
+            fig_trend.update_layout(
                 title=f"{company_name} 매출액 / 영업이익 / 순이익 추이",
+                barmode="group",
+                xaxis=dict(tickmode="array", tickvals=_years, ticktext=[str(y) for y in _years]),
+                yaxis=dict(title="억원", dtick=200000),
+                height=800,
+                updatemenus=[{"type": "buttons", "showactive": False,
+                              "y": 0, "x": 0, "xanchor": "left",
+                              "bgcolor": "rgba(0,0,0,0)", "bordercolor": "rgba(0,0,0,0)",
+                              "font": {"color": "rgba(0,0,0,0)", "size": 1},
+                              "buttons": [{"label": "▶", "method": "animate",
+                                           "args": [None, {"frame": {"duration": 600, "redraw": True},
+                                                           "fromcurrent": True,
+                                                           "transition": {"duration": 400, "easing": "linear"}}]}]}],
             )
             st.plotly_chart(fig_trend, use_container_width=True)
 
-            # 영업이익률 차트
-            fig_margin = px.line(
-                df, x="연도", y="영업이익률 (%)",
-                markers=True,
-                title=f"{company_name} 영업이익률 추이",
+            # 영업이익률 차트 (좌→우 애니메이션)
+            _frames_margin = [
+                go.Frame(data=[go.Scatter(
+                    x=_years[:i], y=df["영업이익률 (%)"].tolist()[:i],
+                    mode="lines+markers", showlegend=False,
+                    line=dict(color="#FF6B6B", width=2), marker=dict(size=7),
+                )])
+                for i in range(1, len(_years) + 1)
+            ]
+            fig_margin = go.Figure(
+                data=[go.Scatter(
+                    x=[_years[0]], y=[df["영업이익률 (%)"].tolist()[0]],
+                    mode="markers", showlegend=False,
+                    line=dict(color="#FF6B6B", width=2), marker=dict(size=7),
+                )],
+                frames=_frames_margin,
             )
-            fig_margin.update_traces(line_color="#FF6B6B")
+            fig_margin.update_layout(
+                title=f"{company_name} 영업이익률 추이",
+                yaxis_title="영업이익률 (%)",
+                updatemenus=[{"type": "buttons", "showactive": False,
+                              "y": 1.15, "x": 0.0, "xanchor": "left",
+                              "buttons": [{"label": "▶", "method": "animate",
+                                           "args": [None, {"frame": {"duration": 700, "redraw": True},
+                                                           "fromcurrent": True,
+                                                           "transition": {"duration": 500, "easing": "linear"}}]}]}],
+            )
             st.plotly_chart(fig_margin, use_container_width=True)
 
             # YoY 성장률 표
