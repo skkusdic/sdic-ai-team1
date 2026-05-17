@@ -118,7 +118,7 @@ def _find_corp_code(company_name: str) -> str:
 
 
 def _extract_year(corp_code: str, year: int, fs_div: str) -> dict:
-    """fnlttSinglAcntAll API로 단년 손익 추출. fs_div: 'CFS' 또는 'OFS'. 단위: 억원."""
+    """fnlttSinglAcntAll API로 단년 손익 추출. fs_div: 'CFS' 또는 'OFS'. 단위: 백만원."""
     params = {
         "crtfc_key": DART_API_KEY,
         "corp_code": corp_code,
@@ -141,7 +141,7 @@ def _extract_year(corp_code: str, year: int, fs_div: str) -> dict:
         if not amt or amt == "-":
             continue
         try:
-            val = int(amt) // 100_000_000
+            val = int(amt) // 1_000_000
         except (ValueError, TypeError):
             continue
         if nm in _REVENUE_LABELS and "매출액" not in data:

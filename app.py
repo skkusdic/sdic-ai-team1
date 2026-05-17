@@ -434,9 +434,9 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             margin = round(op / rev * 100, 1) if rev else 0.0
             rows.append({
                 "연도": year,
-                "매출액 (억원)":   rev,
-                "영업이익 (억원)": op,
-                "순이익 (억원)":   net,
+                "매출액 (백만원)":   rev,
+                "영업이익 (백만원)": op,
+                "순이익 (백만원)":   net,
                 "영업이익률 (%)":  margin,
             })
         df = pd.DataFrame(rows)
@@ -445,20 +445,20 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
         latest = df.iloc[-1]
         prev   = df.iloc[-2] if len(df) >= 2 else None
 
-        rev_curr = latest["매출액 (억원)"]
-        op_curr  = latest["영업이익 (억원)"]
-        net_curr = latest["순이익 (억원)"]
+        rev_curr = latest["매출액 (백만원)"]
+        op_curr  = latest["영업이익 (백만원)"]
+        net_curr = latest["순이익 (백만원)"]
         mg_curr  = latest["영업이익률 (%)"]
         latest_year = latest["연도"]
 
-        rev_prev = prev["매출액 (억원)"]   if prev is not None else None
-        op_prev  = prev["영업이익 (억원)"] if prev is not None else None
-        net_prev = prev["순이익 (억원)"]   if prev is not None else None
+        rev_prev = prev["매출액 (백만원)"]   if prev is not None else None
+        op_prev  = prev["영업이익 (백만원)"] if prev is not None else None
+        net_prev = prev["순이익 (백만원)"]   if prev is not None else None
         mg_prev  = prev["영업이익률 (%)"]  if prev is not None else None
 
         # ── YoY 성장률 표 ──
         yoy = df[["연도"]].copy()
-        for col in ["매출액 (억원)", "영업이익 (억원)", "순이익 (억원)"]:
+        for col in ["매출액 (백만원)", "영업이익 (백만원)", "순이익 (백만원)"]:
             yoy[col + " YoY"] = df[col].pct_change().apply(
                 lambda x: f"{x * 100:+.1f}%" if pd.notna(x) else "—"
             )
@@ -466,9 +466,9 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
         # ── 스타일 DataFrame ──
         fmt = "{:,.0f}".format
         styled_df = df.style.format({
-            "매출액 (억원)":   fmt,
-            "영업이익 (억원)": fmt,
-            "순이익 (억원)":   fmt,
+            "매출액 (백만원)":   fmt,
+            "영업이익 (백만원)": fmt,
+            "순이익 (백만원)":   fmt,
             "영업이익률 (%)":  "{:.1f}".format,
         }).set_properties(**{"text-align": "center"}).set_table_styles(
             [{"selector": "th", "props": [("text-align", "center")]}]
@@ -479,7 +479,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
         with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.subheader(f"{company_name} 연도별 재무 현황 (억원)")
+            st.subheader(f"{company_name} 연도별 재무 현황 (백만원)")
 
             # KPI 카드 4장
             c1, c2, c3, c4 = st.columns(4)
@@ -497,7 +497,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
             # 3지표 추이 막대 차트 + 꼭짓점 연결선 애니메이션
             _years = df["연도"].tolist()
-            _bar_cols  = ["매출액 (억원)", "영업이익 (억원)", "순이익 (억원)"]
+            _bar_cols  = ["매출액 (백만원)", "영업이익 (백만원)", "순이익 (백만원)"]
             _bar_names = ["매출액", "영업이익", "순이익"]
             _bar_clrs  = ["#1b5e20", "#4caf50", "#aed581"]
 
@@ -535,7 +535,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 title=f"{company_name} 매출액 / 영업이익 / 순이익 추이",
                 barmode="group",
                 xaxis=dict(tickmode="array", tickvals=_years, ticktext=[str(y) for y in _years]),
-                yaxis=dict(title="억원", dtick=200000),
+                yaxis=dict(title="백만원"),
                 height=800,
                 updatemenus=[{"type": "buttons", "showactive": False,
                               "y": 0, "x": 0, "xanchor": "left",

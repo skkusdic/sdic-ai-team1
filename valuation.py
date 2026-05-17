@@ -1,6 +1,6 @@
 """DCF(Discounted Cash Flow) 시뮬레이션 계산 모듈.
 
-모든 금액 단위: 억원
+모든 금액 단위: 백만원
 주당 가치 단위: 원
 """
 
@@ -118,8 +118,9 @@ def calculate_dcf(financial_data: dict, assumptions: dict) -> dict:
 
     enterprise_value = pv_fcf_sum + pv_terminal_value
     equity_value = enterprise_value - net_debt
-    # shares_outstanding: 만 주 → 억원/만주 = 만원/주 → ×10000 = 원/주
-    value_per_share = (equity_value / shares) * 10_000 if shares > 0 else 0.0
+    # shares_outstanding: 만 주, equity_value: 백만원
+    # 백만원 / 만주 = 100원/주 → × 100 = 원/주
+    value_per_share = (equity_value / shares) * 100 if shares > 0 else 0.0
 
     return {
         "projections": projections,
