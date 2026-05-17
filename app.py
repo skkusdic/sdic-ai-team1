@@ -30,7 +30,7 @@ st.markdown("""
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 
 html, body, [class*="css"], .stApp {
-    font-family: 'Noto Sans KR', sans-serif;
+    font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
     background-color: #ffffff !important;
     color: #1a1a1a !important;
 }
@@ -64,6 +64,7 @@ label, .stTextInput label,
 }
 
 .stTextInput > div > div > input {
+    text-align: center !important;
     border: 1px solid #e0e0e0 !important;
     border-radius: 6px !important;
     padding: 10px 14px !important;
@@ -508,6 +509,9 @@ def img_to_base64_transparent(path, threshold=235):
 _skku_b64 = img_to_base64_transparent(skku_path) if os.path.exists(skku_path) else None
 _sdic_b64 = img_to_base64_transparent(sdic_path) if os.path.exists(sdic_path) else None
 
+_wallpaper_path = os.path.join(os.path.dirname(__file__), "skku_wallpaper.jpg")
+_wallpaper_b64  = img_to_base64(_wallpaper_path) if os.path.exists(_wallpaper_path) else None
+
 _logo_center_html = ""
 if _skku_b64 and _sdic_b64:
     _logo_center_html = (
@@ -548,12 +552,14 @@ if _is_startup:
     st.markdown("""
 <style>
 [data-testid="stAppViewContainer"] {
-    background: linear-gradient(170deg, #c2ccaa 0%, #2d4535 100%) !important;
+    background:
+        linear-gradient(170deg, rgba(187,202,146,0.88) 0%, rgba(45,69,53,0.93) 100%),
+        url('data:image/jpeg;base64,""" + (_wallpaper_b64 or "") + """') center 65%/cover no-repeat !important;
 }
 /* 사이드바: 버튼과 동일한 반투명 회색 */
 [data-testid="stSidebar"] {
-    background-color: rgba(60,60,60,0.45) !important;
-    border-right: 1px solid rgba(60,60,60,0.2) !important;
+    background-color: rgba(60,60,60,0.22) !important;
+    border-right: 1px solid rgba(60,60,60,0.12) !important;
     border-left: 3px solid rgba(10,61,20,0.7) !important;
 }
 /* 로고 배경 제거: stMain 내 모든 중간 wrapper 투명 처리 */
@@ -596,6 +602,20 @@ if _is_startup:
 [data-testid="stMain"] .stButton > button:hover {
     background-color: rgba(60,60,60,0.62) !important;
     border-color: #0a3d14 !important;
+}
+
+/* ── 제목 3D 바닥 그림자 ── */
+[data-testid="stMain"] h1 {
+    text-shadow: 0 30px 14px rgba(0,0,0,0.65) !important;
+}
+.header-logo img {
+    filter: drop-shadow(0 30px 14px rgba(0,0,0,0.42)) !important;
+}
+[data-testid="stMain"] .stTextInput > div > div > input {
+    box-shadow: 0 20px 14px rgba(0,0,0,0.42) !important;
+}
+[data-testid="stMain"] .stButton > button {
+    box-shadow: 0 30px 14px rgba(0,0,0,0.42) !important;
 }
 
 /* ── 순차 페이드인: (레이블+검색창 동시) → 버튼 ── */
@@ -693,11 +713,11 @@ with st.sidebar:
 <div style="margin:0; padding:0; line-height:1.4;">
     <div style="font-size:13px; color:#888; margin-bottom:0;">Powered by</div>
     <div style="font-size:13px; color:#888; font-weight:700; margin-top:0;">DART API · Claude AI</div>
-    <div style="display:flex; gap:12px; margin-top:2px; margin-bottom:0; align-items:center; margin-left:-8px;">
+    <div style="display:flex; gap:4px; margin-top:2px; margin-bottom:0; align-items:center; margin-left:-20px;">
         {_logo_html}
     </div>
 </div>
-<div style="height:1px; background-color:#aaaaaa; margin:16px 0 0 0; border-radius:1px;"></div>
+<div style="height:1px; background-color:{'#aaaaaa' if _is_startup else '#2e7d32'}; margin:16px 0 0 0; border-radius:1px;"></div>
 """, unsafe_allow_html=True)
     st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
     st.markdown("#### 에이전트 상태")
@@ -775,18 +795,28 @@ if run:
         st.session_state.agent_status = {"data": "실행 중", "analysis": "실행 중", "report": "실행 중"}
         st.session_state.final_state = None
 
-        _sp_l, _sp_c, _sp_r = st.columns([2, 1, 2])
-        with _sp_c:
-            with st.spinner("분석 중"):
-                graph_state = pipeline.invoke({
-                    "request": f"{company_input} 재무 분석해줘",
-                    "company": company_input.strip(),
-                    "next_agent": "",
-                    "financials": {},
-                    "analysis": "",
-                    "result": "",
-                    "pdf_path": "",
-                })
+        with _b2:
+            _spin = st.empty()
+            _spin.markdown(
+                '<div style="display:flex;justify-content:center;align-items:center;'
+                'gap:8px;padding:10px 0;">'
+                '<span style="display:inline-block;width:14px;height:14px;'
+                'border:2.5px solid rgba(10,61,20,0.25);border-top-color:#0a3d14;'
+                'border-radius:50%;animation:spin 0.75s linear infinite;flex-shrink:0;"></span>'
+                '<span style="font-size:14px;color:#1a1a1a;font-weight:500;'
+                'white-space:nowrap;">분석 중</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        graph_state = pipeline.invoke({
+            "request": f"{company_input} 재무 분석해줘",
+            "company": company_input.strip(),
+            "next_agent": "",
+            "financials": {},
+            "analysis": "",
+            "result": "",
+            "pdf_path": "",
+        })
 
         st.session_state.final_state = graph_state
         st.session_state.company = company_input.strip()
@@ -967,20 +997,20 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             )
             st.plotly_chart(fig_margin, use_container_width=True)
 
-            # 차트 선/점 SVG path에 IntersectionObserver + CSS 애니메이션 적용
-            st.markdown("""
+            # 꺾은선 드로잉 애니메이션 — components.v1.html 로 스크립트 실행 보장
+            import streamlit.components.v1 as _components
+            _components.html("""
 <script>
 (function() {
-    var done = new WeakSet();
+    var doc = window.parent.document;
 
-    function animateChart(chart) {
-        if (done.has(chart)) return;
-        var lines = chart.querySelectorAll('.js-line');
-        if (!lines.length) return;
-        done.add(chart);
+    function prepare(chart) {
+        if (chart.dataset.lineAnimDone) return;
+        var paths = chart.querySelectorAll('.lines .js-line');
+        if (!paths.length) return;
+        chart.dataset.lineAnimDone = '1';
 
-        // 선·점 초기 숨김
-        lines.forEach(function(p) {
+        paths.forEach(function(p) {
             try {
                 var len = p.getTotalLength();
                 if (!len) return;
@@ -994,42 +1024,53 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             pt.style.opacity = '0';
         });
 
+        // Streamlit 메인 스크롤 컨테이너 감지
+        var scrollRoot = doc.querySelector('[data-testid="stAppViewContainer"]') || doc.documentElement;
+
         new IntersectionObserver(function(entries, obs) {
             entries.forEach(function(entry) {
                 if (!entry.isIntersecting) return;
-                var el = entry.target;
-                el.querySelectorAll('.js-line').forEach(function(p) {
-                    try {
-                        p.getBoundingClientRect();
-                        p.style.transition = 'stroke-dashoffset 1.4s ease';
-                        p.style.strokeDashoffset = '0';
-                    } catch(e) {}
-                });
-                el.querySelectorAll('.scatter .points path').forEach(function(pt, i) {
-                    pt.style.transition = 'opacity 0.4s ease ' + (1.2 + i * 0.15) + 's';
-                    pt.style.opacity = '1';
-                });
                 obs.disconnect();
+                var el = entry.target;
+                requestAnimationFrame(function() {
+                    requestAnimationFrame(function() {
+                        el.querySelectorAll('.lines .js-line').forEach(function(p) {
+                            try {
+                                p.style.transition = 'stroke-dashoffset 1.5s cubic-bezier(0.4,0,0.2,1)';
+                                p.style.strokeDashoffset = '0';
+                            } catch(e) {}
+                        });
+                        el.querySelectorAll('.scatter .points path').forEach(function(pt, i) {
+                            pt.style.transition = 'opacity 0.35s ease ' + (1.3 + i * 0.08) + 's';
+                            pt.style.opacity = '1';
+                        });
+                    });
+                });
             });
-        }, { threshold: 0.25 }).observe(chart);
+        }, { threshold: 0.15, root: null }).observe(chart);
     }
 
     function scan() {
-        var doc = window.parent.document;
-        doc.querySelectorAll('.js-plotly-plot').forEach(animateChart);
+        doc.querySelectorAll('.js-plotly-plot').forEach(prepare);
     }
 
-    // 최초 실행 + Streamlit 재렌더 시 재감지
-    setTimeout(scan, 600);
-    setTimeout(scan, 1400);
+    // 반복 스캔: Plotly 렌더 완료 대기
+    var attempts = 0;
+    var iv = setInterval(function() {
+        scan();
+        attempts++;
+        if (attempts > 20) clearInterval(iv);
+    }, 400);
+
+    // DOM 변화 감지 (탭 전환·재렌더 대응)
     var t = null;
     new MutationObserver(function() {
         clearTimeout(t);
         t = setTimeout(scan, 300);
-    }).observe(window.parent.document.body, { childList: true, subtree: true });
+    }).observe(doc.body, { childList: true, subtree: true });
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
 
             st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
             st.subheader("YoY 성장률")
