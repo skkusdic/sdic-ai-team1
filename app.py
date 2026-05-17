@@ -241,6 +241,10 @@ if "qa_history" not in st.session_state:
     st.session_state.qa_history = []
 if "qa_mode" not in st.session_state:
     st.session_state.qa_mode = "자동"
+if "cmp_company" not in st.session_state:
+    st.session_state.cmp_company = ""
+if "cmp_financials" not in st.session_state:
+    st.session_state.cmp_financials = {}
 
 # ── 헬퍼 함수 ────────────────────────────────────────────
 def delta_pct(curr, prev):
@@ -475,7 +479,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
         )
 
         # ── 탭 ──
-        tab1, tab2, tab3 = st.tabs(["재무 데이터", "Claude 분석", "AI 질문 (RAG + Text2SQL)"])
+        tab1, tab2, tab3, tab4 = st.tabs(["재무 데이터", "Claude 분석", "AI 질문 (RAG + Text2SQL)", "기업 비교"])
 
         with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
@@ -666,6 +670,98 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             st.dataframe(item["df"], use_container_width=True, hide_index=True)
 
                     st.markdown("")
+
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with tab4:
+            st.markdown('<div class="fade-section">', unsafe_allow_html=True)
+            st.subheader("기업 비교")
+            st.markdown(f"**기준 기업:** {company_name}")
+
+            cmp_input = st.text_input(
+                "비교할 기업명 입력",
+                placeholder="예: 카카오, Samsung, LGdisplay",
+                key="cmp_company_input",
+            )
+            cmp_btn = st.button("비교 조회", key="cmp_btn")
+
+            if cmp_btn and cmp_input.strip():
+                with st.spinner(f"{cmp_input} 데이터 조회 중..."):
+                    from data import get_financials as _get_fin
+                    cmp_fin = _get_fin(cmp_input.strip())
+                if not cmp_fin:
+                    st.error(f"'{cmp_input}' 데이터를 찾을 수 없습니다. 기업명을 확인해주세요.")
+                else:
+                    st.session_state.cmp_company = cmp_input.strip()
+                    st.session_state.cmp_financials = cmp_fin
+
+            # 비교 결과 렌더링
+            if st.session_state.get("cmp_financials"):
+                cmp_name = st.session_state.cmp_company
+                cmp_fin  = st.session_state.cmp_financials
+
+                # 연도 키를 문자열로 정규화 (파이프라인은 int, get_financials는 str)
+                fin_norm = {str(k): v for k, v in financials.items()}
+                cmp_norm = {str(k): v for k, v in cmp_fin.items()}
+                common_years = sorted(set(fin_norm.keys()) & set(cmp_norm.keys()), key=lambda y: int(y))
+
+                if not common_years:
+                    st.warning("두 기업 간 공통 연도 데이터가 없습니다.")
+                else:
+                    st.markdown("---")
+                    st.markdown(f"### {company_name} vs {cmp_name} — 재무 비교")
+
+                    # ── 비교 표 ──
+                    cmp_rows = []
+                    for year in common_years:
+                        a = fin_norm[year]
+                        b = cmp_norm[year]
+                        cmp_rows.append({
+                            "연도":                        year,
+                            f"{company_name} 매출액":      a.get("매출액", 0),
+                            f"{cmp_name} 매출액":          b.get("매출액", 0),
+                            f"{company_name} 영업이익":    a.get("영업이익", 0),
+                            f"{cmp_name} 영업이익":        b.get("영업이익", 0),
+                            f"{company_name} 순이익":      a.get("순이익", 0),
+                            f"{cmp_name} 순이익":          b.get("순이익", 0),
+                        })
+                    cmp_df = pd.DataFrame(cmp_rows)
+
+                    fmt_int = "{:,.0f}".format
+                    fmt_cols = [c for c in cmp_df.columns if c != "연도"]
+                    cmp_styled = cmp_df.style.format({c: fmt_int for c in fmt_cols}).set_properties(
+                        **{"text-align": "center"}
+                    ).set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
+                    st.dataframe(cmp_styled, use_container_width=True)
+
+                    # ── 그룹 막대 차트 ──
+                    colors_a = {"매출액": "#1b5e20", "영업이익": "#4caf50", "순이익": "#aed581"}
+                    colors_b = {"매출액": "#0d47a1", "영업이익": "#1976d2", "순이익": "#64b5f6"}
+
+                    for metric in ["매출액", "영업이익", "순이익"]:
+                        fig_cmp = go.Figure([
+                            go.Bar(
+                                name=company_name,
+                                x=common_years,
+                                y=[fin_norm[y].get(metric, 0) for y in common_years],
+                                marker_color=colors_a[metric],
+                            ),
+                            go.Bar(
+                                name=cmp_name,
+                                x=common_years,
+                                y=[cmp_norm[y].get(metric, 0) for y in common_years],
+                                marker_color=colors_b[metric],
+                            ),
+                        ])
+                        fig_cmp.update_layout(
+                            title=f"{metric} 비교 (억원)",
+                            barmode="group",
+                            xaxis=dict(tickmode="array", tickvals=common_years, ticktext=[str(y) for y in common_years]),
+                            yaxis_title="억원",
+                            height=400,
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        )
+                        st.plotly_chart(fig_cmp, use_container_width=True)
 
             st.markdown('</div>', unsafe_allow_html=True)
 
