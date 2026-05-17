@@ -6,6 +6,7 @@ from datetime import datetime
 import dart_fss as dart
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from claude_client import ask
 
 load_dotenv(override=True)
 
@@ -68,11 +69,29 @@ def _get_corp_list():
     return _corp_list_cache
 
 
+def _translate_to_korean(name: str) -> str:
+    """영문/혼합 입력을 DART 공시 한국어 회사명으로 변환. 실패 시 빈 문자열 반환."""
+    prompt = (
+        f'다음은 사용자가 입력한 한국 기업명입니다: "{name}"\n'
+        "이 기업의 DART(금융감독원 전자공시) 공시에 사용되는 정확한 한국어 회사명을 "
+        "한 단어로만 답하세요. 모르면 UNKNOWN이라고만 답하세요."
+    )
+    result = ask(prompt, max_tokens=20).strip()
+    if result == "UNKNOWN" or not result:
+        return ""
+    return result
+
+
 def _find_corp_code(company_name: str) -> str:
     corp_list = _get_corp_list()
     raw = company_name.strip()
-    # 영문 입력이면 한국어로 변환
+    # 1순위: 하드코딩 딕셔너리
     raw = _EN_TO_KR.get(raw.lower(), raw)
+    # 2순위: 한국어가 아닌 문자 포함 시 Claude 번역
+    if any(ord(c) < 0xAC00 or ord(c) > 0xD7A3 for c in raw if c.isalpha()):
+        translated = _translate_to_korean(raw)
+        if translated:
+            raw = translated
     no_space = raw.replace(" ", "")
     candidates = [raw]
     if no_space != raw:
