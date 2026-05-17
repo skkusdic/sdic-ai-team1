@@ -332,7 +332,24 @@ def calculate_full_wacc(dcf_inputs: dict, capm_ke: float, tax_rate: float = 0.24
             "note":           "이자비용 데이터 없어 WACC = Ke (부채비용 미반영)",
         }
 
-    kd   = interest_exp / total_debt if total_debt > 0 else 0.0
+    kd = interest_exp / total_debt if total_debt > 0 else 0.0
+
+    # Kd 비정상 감지: 이자비용이 총차입금을 초과하면 DART 계정 혼입 의심
+    # (파생상품 손실·FX 비용 등이 이자비용에 합산되는 대기업 케이스)
+    if kd > 0.20:
+        return {
+            "wacc":           round(capm_ke, 4),
+            "cost_of_equity": capm_ke,
+            "cost_of_debt":   round(kd, 4),
+            "weight_equity":  round(w_e, 4),
+            "weight_debt":    round(w_d, 4),
+            "note": (
+                f"Kd({kd:.1%})가 20%를 초과해 비정상치로 판단 "
+                f"(이자비용에 파생상품 손실·FX 비용 등이 혼입됐을 가능성). "
+                f"WACC = Ke({capm_ke:.2%})로 폴백."
+            ),
+        }
+
     wacc = capm_ke * w_e + kd * (1 - tax_rate) * w_d
 
     return {
@@ -349,6 +366,122 @@ def calculate_full_wacc(dcf_inputs: dict, capm_ke: float, tax_rate: float = 0.24
 
 # ── 민감도 분석 ───────────────────────────────────────────────────────────
 
+def get_auto_sensitivity_ranges(assumptions: dict) -> tuple[list[float], list[float]]:
+    """
+    기본 가정에서 민감도 분석 범위 자동 생성.
+    - 할인율: 기준값 ±3×1.5%p (5%~18% 클램핑)
+    - 성장률: 정제 CAGR × [0.5, 0.75, 1.0, 1.25, 1.5] (0% 하한)
+    """
+    base_dr = assumptions.get("discount_rate", 0.09)
+    base_ec = (
+        assumptions.get("effective_revenue_cagr")
+        or assumptions.get("revenue_growth_rate")
+        or 0.05
+    )
+
+    step = 0.015
+    drs = sorted({
+        round(max(0.05, min(0.18, base_dr + i * step)), 3)
+        for i in (-2, -1, 0, 1, 2)
+    })
+
+    grs = sorted({
+        round(max(0.0, base_ec * m), 4)
+        for m in (0.50, 0.75, 1.00, 1.25, 1.50)
+    })
+
+    return grs, drs
+
+
+def calculate_implied_discount_rate(
+    dcf_inputs:     dict,
+    assumptions:    dict,
+    market_price:   float,
+    bounds:         tuple[float, float] = (0.03, 0.40),
+) -> dict:
+    """
+    역 DCF: 현재 주가에서 시장내재 할인율(WACC) 역산.
+    이분법(binary search) 50회 반복.
+
+    Args:
+        market_price: 현재 주가 (원 단위)
+
+    Returns:
+        {
+            "implied_discount_rate": float | None,
+            "market_equity_value":   float (억원),
+            "target_ev":             float (억원),
+            "note":                  str,
+        }
+    """
+    shares = assumptions.get("shares_outstanding")
+    if not shares or shares <= 0 or market_price <= 0:
+        return {"implied_discount_rate": None,
+                "note": "주가 또는 주식수 없어 역산 불가"}
+
+    market_equity_value = market_price * shares / 100_000_000   # 억원
+    net_debt = assumptions.get("net_debt", 0) or 0
+    target_ev = market_equity_value + net_debt
+
+    def _ev(dr: float) -> float:
+        asm = {k: v for k, v in assumptions.items() if k != "_build_warnings"}
+        asm["discount_rate"] = dr
+        r = calculate_dcf(dcf_inputs, asm)
+        return r.get("valuation", {}).get("enterprise_value") or 0.0
+
+    lo, hi = bounds
+    ev_lo, ev_hi = _ev(lo), _ev(hi)
+
+    if ev_lo < target_ev:
+        return {
+            "implied_discount_rate": None,
+            "market_equity_value":   round(market_equity_value, 1),
+            "target_ev":             round(target_ev, 1),
+            "note": (
+                f"최저 할인율({lo:.0%}) 적용 EV({ev_lo:,.0f}억)조차 "
+                f"시장 EV({target_ev:,.0f}억)보다 낮습니다. "
+                f"현재 성장 가정이 지나치게 보수적이거나 "
+                f"시장이 성장 가정 외 프리미엄(브랜드·독점력 등)을 부여합니다."
+            )
+        }
+    if ev_hi > target_ev:
+        return {
+            "implied_discount_rate": None,
+            "market_equity_value":   round(market_equity_value, 1),
+            "target_ev":             round(target_ev, 1),
+            "note": (
+                f"최고 할인율({hi:.0%}) 적용 EV({ev_hi:,.0f}억)도 "
+                f"시장 EV({target_ev:,.0f}억)보다 높습니다. "
+                f"성장 가정이 매우 공격적이거나 시장이 이 수준의 성장을 확신합니다."
+            )
+        }
+
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        if abs(hi - lo) < 1e-6:
+            break
+        if _ev(mid) > target_ev:
+            lo = mid
+        else:
+            hi = mid
+
+    implied = round((lo + hi) / 2, 4)
+    ec   = assumptions.get("effective_revenue_cagr") or assumptions.get("revenue_growth_rate", 0)
+    opm  = assumptions.get("operating_margin", 0)
+    return {
+        "implied_discount_rate": implied,
+        "market_equity_value":   round(market_equity_value, 1),
+        "target_ev":             round(target_ev, 1),
+        "note": (
+            f"현재 주가({market_price:,.0f}원) 기준 시장내재 WACC: {implied:.2%}. "
+            f"DCF 성장 가정(정제 CAGR {ec:.1%}, OPM {opm:.1%})이 맞다면 "
+            f"시장은 이 기업에 {implied:.2%}의 자본비용을 요구하는 셈입니다. "
+            f"현재 설정 할인율({assumptions.get('discount_rate', 0):.2%})과의 차이가 크면 "
+            f"성장 가정 또는 리스크 프리미엄을 재검토하세요."
+        )
+    }
+
+
 def calculate_sensitivity(
     dcf_inputs:     dict,
     base_assumptions: dict,
@@ -357,15 +490,17 @@ def calculate_sensitivity(
 ) -> dict:
     """
     성장률 × 할인율 조합별 VPS 매트릭스.
-    단일 성장률(revenue_growth_rate)을 변화시켜 각 셀의 VPS를 계산.
+    범위 미제공 시 get_auto_sensitivity_ranges()로 자동 생성.
 
     Returns:
         {"growth_rates": [...], "discount_rates": [...], "matrix": {dr: {gr: vps}}}
     """
-    if growth_rates  is None:
-        growth_rates  = [0.10, 0.20, 0.30, 0.40, 0.50]
-    if discount_rates is None:
-        discount_rates = [0.07, 0.09, 0.11]
+    if growth_rates is None or discount_rates is None:
+        auto_grs, auto_drs = get_auto_sensitivity_ranges(base_assumptions)
+        if growth_rates  is None:
+            growth_rates  = auto_grs
+        if discount_rates is None:
+            discount_rates = auto_drs
 
     matrix: dict = {}
     for dr in discount_rates:
@@ -480,6 +615,29 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
     if capm_discount_rate:
         full_wacc_result = calculate_full_wacc(dcf_inputs, capm_discount_rate, tax_rate_val)
 
+    # ── 할인율 결정 (우선순위: 실질 WACC > CAPM > 보수 기본값) ────────────
+    _DR_MIN, _DR_MAX = 0.06, 0.18   # 합리적 할인율 범위
+    effective_dr = 0.09
+    dr_source    = "conservative_default"
+
+    if full_wacc_result:
+        wacc_val = full_wacc_result.get("wacc")
+        if wacc_val and _DR_MIN <= wacc_val <= _DR_MAX:
+            effective_dr = round(wacc_val, 4)
+            dr_source    = "full_wacc"
+        elif capm_discount_rate and _DR_MIN <= capm_discount_rate <= _DR_MAX:
+            effective_dr = round(capm_discount_rate, 4)
+            dr_source    = "capm_ke"
+    elif capm_discount_rate and _DR_MIN <= capm_discount_rate <= _DR_MAX:
+        effective_dr = round(capm_discount_rate, 4)
+        dr_source    = "capm_ke"
+
+    if dr_source == "conservative_default":
+        warnings.append(
+            "시장 데이터 없어 할인율 기본값 9%를 사용합니다. "
+            "CAPM/WACC 계산이 가능하면 실질 자본비용으로 자동 교체됩니다."
+        )
+
     return {
         "revenue_growth_rate":      round(growth_info["effective_cagr"], 4),
         "revenue_growth_rates":     growth_info["yearly_growth_rates"],
@@ -489,10 +647,10 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
         "growth_assumption_note":   growth_info["note"],
         "operating_margin":         round(margin, 4),
         "tax_rate":                 tax_rate_val,
-        "discount_rate":            0.09,
+        "discount_rate":            effective_dr,
         "capm_discount_rate":       capm_discount_rate,
         "full_wacc":                full_wacc_result,
-        "discount_rate_source":     "conservative_default",
+        "discount_rate_source":     dr_source,
         "terminal_growth_rate":     0.015,
         "capex_ratio":              round(max(capex_ratio, 0), 4),
         "depreciation_ratio":       round(max(dep_ratio, 0), 4),
@@ -655,34 +813,37 @@ if __name__ == "__main__":
 
     from data import get_dcf_inputs
 
-    print("=" * 60)
-    print("  DCF 시뮬레이션 테스트 — 에이피알")
-    print("=" * 60)
+    company_name = sys.argv[1] if len(sys.argv) > 1 else "에이피알"
+    print("=" * 65)
+    print(f"  DCF 시뮬레이션 테스트 — {company_name}")
+    print("=" * 65)
 
-    dcf_inputs  = get_dcf_inputs("에이피알")
+    dcf_inputs  = get_dcf_inputs(company_name)
     if not dcf_inputs:
         print("  데이터 수집 실패")
         sys.exit(1)
 
     assumptions = build_default_assumptions(dcf_inputs)
     result      = calculate_dcf(dcf_inputs, assumptions)
+    asm         = result.get("assumptions", {})
 
     print("\n[ 기본 가정 ]")
-    asm = result.get("assumptions", {})
     print(f"  성장 프로파일  : {asm.get('growth_profile')}")
     print(f"  역사적 CAGR    : {asm.get('historical_revenue_cagr', 0):.2%}")
     print(f"  정제 CAGR      : {asm.get('effective_revenue_cagr', 0):.2%}")
     rates = asm.get('revenue_growth_rates', [])
     print(f"  연도별 성장률  : {[f'{r:.1%}' for r in rates]}")
     print(f"  영업이익률     : {asm.get('operating_margin', 0):.2%}")
-    print(f"  할인율(WACC)   : {asm.get('discount_rate', 0):.2%}")
+    _dr_src = asm.get('discount_rate_source', '')
+    print(f"  할인율(WACC)   : {asm.get('discount_rate', 0):.2%}  [{_dr_src}]")
     print(f"  CAPM 참고값    : {asm.get('capm_discount_rate', 0):.2%}" if asm.get('capm_discount_rate') else "  CAPM 참고값    : N/A")
+    _fw = asm.get('full_wacc') or {}
+    if _fw.get('wacc'):
+        print(f"  실질 WACC      : {_fw['wacc']:.2%}  ({_fw.get('note','')})")
     print(f"  영구성장률     : {asm.get('terminal_growth_rate', 0):.2%}")
-    print(f"  법인세율       : {asm.get('tax_rate', 0):.2%}")
     print(f"  CAPEX ratio    : {asm.get('capex_ratio', 0):.2%}")
     print(f"  감가상각 ratio : {asm.get('depreciation_ratio', 0):.2%}")
     print(f"  순차입금       : {asm.get('net_debt', 0):.1f}억원")
-    print(f"  성장 가정 노트 : {asm.get('growth_assumption_note')}")
 
     print("\n[ 5개년 추정 ]")
     for yr, p in result.get("projection", {}).items():
@@ -690,16 +851,50 @@ if __name__ == "__main__":
 
     val = result.get("valuation", {})
     print("\n[ 기업가치 ]")
-    print(f"  Terminal Value   : {val.get('terminal_value', 0):.0f}억원")
-    print(f"  Enterprise Value : {val.get('enterprise_value', 0):.0f}억원")
-    print(f"  순차입금         : {val.get('net_debt', 0):.0f}억원")
-    print(f"  Equity Value     : {val.get('equity_value', 0):.0f}억원")
+    print(f"  Terminal Value   : {val.get('terminal_value', 0):,.0f}억원")
+    print(f"  Enterprise Value : {val.get('enterprise_value', 0):,.0f}억원")
+    print(f"  순차입금         : {val.get('net_debt', 0):,.0f}억원")
+    print(f"  Equity Value     : {val.get('equity_value', 0):,.0f}억원")
     vps = val.get("value_per_share")
-    print(f"  주당 가치        : {vps:,}원" if vps else "  주당 가치        : None (주식수 없음)")
+    print(f"  주당 가치 (DCF)  : {vps:,}원" if vps else "  주당 가치 (DCF)  : None (주식수 없음)")
+
+    # ── 현재 주가 vs DCF 비교 ────────────────────────────────────────────
+    mm = dcf_inputs.get("market_metrics", {})
+    current_price = mm.get("current_price")
+    if current_price and vps:
+        ratio = current_price / vps
+        print(f"  현재 주가        : {current_price:,}원  (DCF 대비 {ratio:.2f}배)")
+
+    # ── 민감도 분석 (자동 범위) ───────────────────────────────────────────
+    print("\n[ 민감도 분석 — 성장률 × 할인율 VPS(원) ]")
+    asm_for_sens = build_default_assumptions(dcf_inputs)  # fresh copy
+    sens = calculate_sensitivity(dcf_inputs, asm_for_sens)
+    grs = sens["growth_rates"]
+    drs = sens["discount_rates"]
+    header = "  할인율\\성장률 |" + "".join(f" {g:.1%}  |" for g in grs)
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+    for dr in drs:
+        row_mark = " *" if abs(dr - asm.get("discount_rate", 0.09)) < 0.001 else "  "
+        row = f"{row_mark} {dr:.2%}       |"
+        for gr in grs:
+            cell = sens["matrix"][dr].get(gr)
+            row += f" {cell:>7,} |" if cell else "    N/A  |"
+        print(row)
+    print("  (* = 현재 사용 할인율)")
+
+    # ── 역 DCF: 시장내재 할인율 ───────────────────────────────────────────
+    if current_price:
+        print("\n[ 역 DCF — 시장내재 할인율 ]")
+        asm_rev = build_default_assumptions(dcf_inputs)
+        implied = calculate_implied_discount_rate(dcf_inputs, asm_rev, current_price)
+        idr = implied.get("implied_discount_rate")
+        print(f"  시장내재 WACC    : {idr:.2%}" if idr else "  시장내재 WACC    : 역산 불가")
+        print(f"  {implied.get('note', '')}")
 
     print("\n[ 경고 ]")
     for w in result.get("warnings", []):
         print(f"  ⚠ {w}")
 
     print(f"\n[ 에러 ] {result.get('error')}")
-    print("=" * 60)
+    print("=" * 65)
