@@ -655,8 +655,10 @@ def get_dcf_inputs(company_name: str) -> dict:
             _dep_total: int | None = (_pp_amor or 0) + (_roua or 0)
         else:
             _dep_total = None
+        # BS 역산 미사용: PPE 변동에 M&A·자산처분·환율·손상 등이 섞여
+        # 기업별로 오차 방향이 달라 모델 왜곡 위험이 크다.
+        # CF 직접 추출 실패 시 None으로 남겨두고 valuation에서 기본 ratio 사용.
 
-        # ── CAPEX (BS 역산용 선계산) ────────────────────────────────────────
         _capex_t = _abs_account(latest_items, ("CF",),
                                 ["유형자산의 취득", "유형자산 취득",
                                  "유형자산취득", "유형자산의취득", "유형자산구입",
@@ -666,32 +668,16 @@ def get_dcf_inputs(company_name: str) -> dict:
                                  "무형자산취득", "무형자산의취득",
                                  "무형자산의 증가", "무형자산증가"])
 
-        # ── BS 역산 D&A fallback ────────────────────────────────────────────
-        # 일부 기업(삼성전자 등)은 DART CF에 감가상각비가 집계 항목 하위에 숨어 있어
-        # API로 직접 조회 불가. 이 경우 BS 순액 PPE 변동으로 역산:
-        #   D&A ≈ PPE_전년 + CAPEX(유형) - PPE_당년
-        _dep_bs_estimated: int | None = None
-        if _dep_total is None:
-            prev_items = year_items.get(base_year - 1, [])
-            _ppe_curr = _match_account(latest_items, ("BS",), ["유형자산"])
-            _ppe_prev = _match_account(prev_items,   ("BS",), ["유형자산"])
-            if _ppe_curr is not None and _ppe_prev is not None and _capex_t is not None:
-                _estimated = _ppe_prev + _capex_t - _ppe_curr
-                if _estimated > 0:
-                    _dep_bs_estimated = _estimated
-                    _dep_total = _dep_bs_estimated
-
         cash_flow = {
             base_year: {
                 "cash_flow_from_operations": _match_account(latest_items, ("CF",),
                                              ["영업활동현금흐름", "영업활동으로 인한 현금흐름", "영업활동으로인한현금흐름"]),
                 "capex_tangible":            _capex_t,
                 "capex_intangible":          _capex_i,
-                "depreciation":             _dep,     # 유형자산감가상각비 단독
-                "amortization":             _amor,    # 무형자산상각비 단독
-                "roua_depreciation":        _roua,    # 사용권자산상각비(IFRS 16)
-                "depreciation_total":       _dep_total,  # DCF용: 유형+무형+ROUA 합산
-                "depreciation_estimated":   _dep_bs_estimated is not None,  # BS 역산 여부 플래그
+                "depreciation":             _dep,
+                "amortization":             _amor,
+                "roua_depreciation":        _roua,
+                "depreciation_total":       _dep_total,  # CF 직접 추출값만. None이면 valuation에서 기본 ratio 사용
             }
         }
 

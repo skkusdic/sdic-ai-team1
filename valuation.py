@@ -342,11 +342,15 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
     dep = cf_latest.get("depreciation_total") or cf_latest.get("depreciation")
     if dep is not None and latest_revenue:
         dep_ratio = dep / latest_revenue
-        if cf_latest.get("depreciation_estimated"):
-            warnings.append("감가상각비를 DART CF에서 직접 조회할 수 없어 BS 유형자산 변동으로 역산했습니다.")
     else:
         dep_ratio = 0.02
-        warnings.append("감가상각비 데이터가 없어 기본값 2%(매출 대비)를 사용했습니다.")
+        warnings.append(
+            "감가상각비 자동 추출 실패: DART 현금흐름표에서 직접 분리된 항목이 없습니다. "
+            "유형자산 장부가액 변동을 이용한 BS 역산은 M&A·자산처분·환율효과 등으로 "
+            "왜곡될 수 있어 사용하지 않았습니다. "
+            "현재 DCF에는 임시 가정값(매출 대비 2%)이 적용되었습니다. "
+            "실제 감가상각비를 아는 경우 UI에서 직접 수정하세요."
+        )
 
     # ── 순차입금 ─────────────────────────────────────────────────────────
     bs_latest  = bs.get(base_year, {})
