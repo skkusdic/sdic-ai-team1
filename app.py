@@ -8,9 +8,12 @@ import plotly.express as px
 
 # Streamlit Cloud Secrets → os.environ 동기화
 # 로컬은 .env(python-dotenv)로 읽히므로 이미 설정됨; Cloud는 여기서 주입
-for _key in ("DART_API_KEY", "ANTHROPIC_API_KEY"):
-    if _key in st.secrets and not os.environ.get(_key):
-        os.environ[_key] = st.secrets[_key]
+try:
+    for _key in ("DART_API_KEY", "ANTHROPIC_API_KEY"):
+        if _key in st.secrets and not os.environ.get(_key):
+            os.environ[_key] = st.secrets[_key]
+except Exception:
+    pass  # 로컬 실행 시 secrets.toml 없어도 정상 동작
 
 from graph import pipeline
 from rag import retrieve, answer_with_rag
@@ -502,7 +505,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 with st.spinner(f"{used_mode} 처리 중..."):
                     try:
                         if used_mode == "RAG":
-                            top_chunks, claude_answer = answer_with_rag(q, financials, company_name)
+                            claude_answer, top_chunks = answer_with_rag(q, financials, company_name)
                             result = {"mode": "RAG", "q": q, "chunks": top_chunks, "answer": claude_answer}
                         else:
                             sql, df_result, err = run_text2sql(q, company_name)
