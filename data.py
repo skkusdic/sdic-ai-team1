@@ -18,7 +18,7 @@ dart.set_api_key(DART_API_KEY)
 
 _corp_list_cache = None
 
-_REVENUE_LABELS = {"매출액", "영업수익", "수익(매출액)"}
+_REVENUE_LABELS = {"매출액", "영업수익", "수익(매출액)", "매출"}
 _OPERATING_LABELS = {"영업이익", "영업이익(손실)", "영업손실"}
 _NET_LABELS = {"당기순이익", "당기순이익(손실)", "당기순손실"}
 
