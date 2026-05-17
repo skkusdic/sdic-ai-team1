@@ -39,8 +39,9 @@ html, body, [class*="css"], .stApp {
 }
 
 [data-testid="stSidebar"] {
-    background-color: #fafafa !important;
+    background-color: #f2f2f2 !important;
     border-right: 1px solid #eeeeee !important;
+    border-left: 3px solid #2e7d32 !important;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -72,8 +73,18 @@ label, .stTextInput label,
 }
 
 .stTextInput > div > div > input:focus {
-    border-color: #1a1a1a !important;
-    box-shadow: none !important;
+    border-color: #2e7d32 !important;
+    box-shadow: 0 0 0 3px rgba(46,125,50,0.15) !important;
+    outline: none !important;
+}
+.stTextInput > div[data-focused="true"],
+.stTextInput > div > div[data-focused="true"] {
+    border-color: #2e7d32 !important;
+    box-shadow: 0 0 0 3px rgba(46,125,50,0.15) !important;
+}
+[data-baseweb="input"]:focus-within {
+    border-color: #2e7d32 !important;
+    box-shadow: 0 0 0 3px rgba(46,125,50,0.15) !important;
 }
 
 .stButton > button {
@@ -140,26 +151,80 @@ hr {
     border-radius: 12px;
     padding: 20px 24px;
     text-align: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    margin-bottom: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);
+    margin-bottom: 12px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: default;
+}
+.kpi-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(46,125,50,0.15), 0 4px 10px rgba(0,0,0,0.08);
 }
 .kpi-label {
-    font-size: 11px;
+    font-size: 14px;
     color: #999;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     margin-bottom: 10px;
 }
 .kpi-value {
-    font-size: 1.5rem;
+    font-size: 14px;
     font-weight: 600;
     color: #1a1a1a;
     margin-bottom: 6px;
     letter-spacing: -0.02em;
 }
 .kpi-delta {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 500;
+}
+
+[data-testid="stTabs"] > div:first-child {
+    margin-bottom: 8px;
+}
+.result-section {
+    margin-bottom: 40px;
+}
+.result-section + .result-section {
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+}
+
+[data-testid="stTabs"] button {
+    font-size: 14px;
+    font-weight: 400;
+    color: #666666;
+    border-radius: 8px 8px 0 0;
+    margin-right: 16px !important;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+[data-testid="stTabs"] button:hover {
+    color: #2e7d32 !important;
+    background: #f1f8f1 !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #1b5e20 !important;
+    font-weight: 600 !important;
+    background: #f1f8f1 !important;
+    border-bottom: 3px solid #2e7d32 !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+    background-color: transparent !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab-border"] {
+    background-color: #c8e6c9 !important;
+    height: 1px !important;
+}
+
+[data-testid="stDownloadButton"] > button {
+    background-color: #dcedc8 !important;
+    color: #2e7d32 !important;
+    border: 1px solid #aed581 !important;
+    font-weight: 500 !important;
+}
+[data-testid="stDownloadButton"] > button:hover {
+    background-color: #c5e1a5 !important;
+    border-color: #8bc34a !important;
 }
 
 @keyframes spin {
@@ -373,7 +438,9 @@ company_input = st.text_input("", placeholder="예: 에이피알", label_visibil
 st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-run = st.button("분석 시작")
+_b1, _b2, _b3 = st.columns([2, 1, 2])
+with _b2:
+    run = st.button("분석 시작", use_container_width=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ── 분석 실행 ─────────────────────────────────────────────
@@ -411,6 +478,7 @@ if run:
 
 # ── 결과 표시 ─────────────────────────────────────────────
 if "final_state" in st.session_state and st.session_state.final_state is not None:
+    st.markdown('<div style="margin-top:80px;"></div>', unsafe_allow_html=True)
     graph_state  = st.session_state.final_state
     company_name = st.session_state.company
     financials   = graph_state.get("financials", {})
@@ -446,7 +514,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
         op_curr  = latest["영업이익 (백만원)"]
         net_curr = latest["순이익 (백만원)"]
         mg_curr  = latest["영업이익률 (%)"]
-        latest_year = latest["연도"]
+        latest_year = f"{int(latest['연도'])}년"
 
         rev_prev = prev["매출액 (백만원)"]   if prev is not None else None
         op_prev  = prev["영업이익 (백만원)"] if prev is not None else None
@@ -476,7 +544,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
         with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.subheader(f"{company_name} 연도별 재무 현황 (백만원)")
+            st.markdown(f"<p style='font-size:1.875rem; font-weight:700; color:#1a1a1a; letter-spacing:-0.02em; margin-bottom:16px;'>{company_name} 연도별 재무 현황 (단위: 백만원)</p>", unsafe_allow_html=True)
 
             # KPI 카드 4장
             c1, c2, c3, c4 = st.columns(4)
@@ -489,41 +557,59 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             with c4:
                 st.markdown(kpi_card(f"영업이익률 ({latest_year})", f"{mg_curr:.1f}%", delta_pp(mg_curr, mg_prev)), unsafe_allow_html=True)
 
-            st.markdown("---")
-            st.dataframe(styled_df, use_container_width=True)
+            st.markdown('<div style="margin:32px 0 24px 0; border-top:1px solid #f0f0f0;"></div>', unsafe_allow_html=True)
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
+            st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
             # 3지표 추이 막대 차트 — 매출액 꼭짓점 점+선 항상 표시
             _years = [int(y) for y in df["연도"].tolist()]
             _bar_cols  = ["매출액 (백만원)", "영업이익 (백만원)", "순이익 (백만원)"]
             _bar_names = ["매출액", "영업이익", "순이익"]
             _bar_clrs  = ["#1b5e20", "#4caf50", "#aed581"]
 
+            # overlay 모드: 큰 값 먼저(뒤), 작은 값 나중(앞) 순으로 그려야
+            # 작은 막대가 앞에 오고 큰 막대가 차이만큼 위로 튀어나오는 효과
+            _bar_w = 0.2  # 두 차트 공통 막대 두께
+            _bar_cols_sorted  = ["매출액 (백만원)", "영업이익 (백만원)", "순이익 (백만원)"]
+            _bar_names_sorted = ["매출액", "영업이익", "순이익"]
+            _bar_clrs_sorted  = ["#1b5e20", "#4caf50", "#aed581"]
+
             _bar_traces = [
                 go.Bar(name=nm, x=_years, y=df[col].tolist(), marker_color=clr,
-                       showlegend=True)
-                for col, nm, clr in zip(_bar_cols, _bar_names, _bar_clrs)
+                       width=_bar_w, showlegend=True)
+                for col, nm, clr in zip(_bar_cols_sorted, _bar_names_sorted, _bar_clrs_sorted)
             ]
-            # 매출액 막대 위 가운데에 점+선 — 그룹 내 첫 번째 막대 x 오프셋 직접 계산
-            _bargap = 0.2
-            _n = len(_bar_cols)  # 3
-            _bar_w = (1.0 - _bargap) / _n
-            _rev_offset = (0 - (_n - 1) / 2) * _bar_w
-            _rev_x  = [y + _rev_offset for y in _years]
-            _rev_y  = df["매출액 (백만원)"].tolist()
-
-            _rev_line = go.Scatter(
-                name="매출액 추이선",
-                x=_rev_x, y=_rev_y,
-                mode="lines+markers",
-                line=dict(color="#1b5e20", width=2.5),
-                marker=dict(size=10, color="#1b5e20", line=dict(width=2, color="white")),
-                showlegend=True,
-            )
-            fig_trend = go.Figure(data=_bar_traces + [_rev_line])
+            # overlay 모드에서는 막대가 x 중심에 겹치므로 오프셋 없음
+            _trend_lines = [
+                go.Scatter(
+                    name="매출액 추이선",
+                    x=_years, y=df["매출액 (백만원)"].tolist(),
+                    mode="lines+markers",
+                    line=dict(color="#1b5e20", width=2.5),
+                    marker=dict(size=10, color="#1b5e20", line=dict(width=2, color="white")),
+                    showlegend=False,
+                ),
+                go.Scatter(
+                    name="영업이익 추이선",
+                    x=_years, y=df["영업이익 (백만원)"].tolist(),
+                    mode="lines+markers",
+                    line=dict(color="#4caf50", width=2.5),
+                    marker=dict(size=10, color="#4caf50", line=dict(width=2, color="white")),
+                    showlegend=False,
+                ),
+                go.Scatter(
+                    name="순이익 추이선",
+                    x=_years, y=df["순이익 (백만원)"].tolist(),
+                    mode="lines+markers",
+                    line=dict(color="#aed581", width=2.5),
+                    marker=dict(size=10, color="#aed581", line=dict(width=2, color="white")),
+                    showlegend=False,
+                ),
+            ]
+            fig_trend = go.Figure(data=_bar_traces + _trend_lines)
             fig_trend.update_layout(
                 title=f"{company_name} 매출액 / 영업이익 / 순이익 추이",
-                barmode="group",
-                bargap=0.2,
+                barmode="overlay",
                 xaxis=dict(tickmode="array", tickvals=_years, ticktext=[str(y) for y in _years]),
                 yaxis=dict(title="백만원"),
                 height=800,
@@ -543,9 +629,9 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 name="영업이익률 추이선",
                 x=_years, y=_mg_vals,
                 mode="lines+markers",
-                line=dict(color="#1b5e20", width=2.5),
-                marker=dict(size=10, color="#1b5e20", line=dict(width=2, color="white")),
-                showlegend=True,
+                line=dict(color="#4caf50", width=2.5),
+                marker=dict(size=10, color="#4caf50", line=dict(width=2, color="white")),
+                showlegend=False,
             )
             fig_margin = go.Figure(data=[_mg_bar, _mg_line])
             fig_margin.update_layout(
@@ -619,7 +705,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 </script>
 """, unsafe_allow_html=True)
 
-            # YoY 성장률 표
+            st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
             st.subheader("YoY 성장률")
             st.dataframe(yoy, use_container_width=True, hide_index=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -874,15 +960,26 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 st.warning(w)
 
         # ── PDF 다운로드 (탭 밖) ──
+        st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
         if pdf_path and os.path.exists(pdf_path):
             with open(pdf_path, "rb") as f:
-                st.download_button(
-                    label="PDF 리포트 다운로드",
-                    data=f,
-                    file_name=f"{company_name}_재무분석.pdf",
-                    mime="application/pdf",
-                )
+                _pdf_c1, _pdf_c2, _pdf_c3 = st.columns([2, 1, 2])
+                with _pdf_c2:
+                    st.download_button(
+                        label="PDF 리포트 다운로드  ↓",
+                        data=f,
+                        file_name=f"{company_name}_재무분석.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                    )
 
+        st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
+        st.markdown("""
+<div style="height:1px; background:linear-gradient(90deg,#2e7d32,#81c784,#2e7d32); border-radius:1px;"></div>
+""", unsafe_allow_html=True)
         st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-        st.success("분석 완료!")
+        st.markdown(
+            '<p style="text-align:center; color:#2e7d32; font-size:1rem; font-weight:500; margin-top:8px;">분석이 완료되었습니다.</p>',
+            unsafe_allow_html=True,
+        )
         st.markdown('</div>', unsafe_allow_html=True)
