@@ -63,6 +63,234 @@ def _avg_margin_from_income(income: dict, years: int = 3) -> float | None:
     return sum(margins) / len(margins) if margins else None
 
 
+# ── 성장 프로파일 분류 ────────────────────────────────────────────────────
+
+def classify_growth_profile(income: dict, terminal_growth_rate: float = 0.015) -> dict:
+    """
+    DART 매출 데이터 기반 룰 분류로 5개년 성장률 시나리오 자동 생성.
+    AI 판단 없이 숫자 기준만 사용.
+
+    분류 기준:
+        CAGR > 30%  → high_growth_fade_down    (강한 fade-down)
+        5~30%       → moderate_growth_convergence
+        0~5%        → low_growth_stable
+        < 0%        → negative_growth_recovery
+        연도별 성장률 표준편차 >= 25%p → volatile=True
+    """
+    import statistics
+
+    sorted_years = sorted(y for y in income if income[y].get("revenue") is not None)
+    revenues = [income[y]["revenue"] for y in sorted_years if income[y].get("revenue")]
+
+    if len(revenues) < 2:
+        return {
+            "profile":             "insufficient_data",
+            "historical_cagr":     None,
+            "yearly_growth_rates": [0.05] * 5,
+            "volatile":            False,
+            "note": "데이터 부족으로 기본 성장률 5%를 사용했습니다.",
+        }
+
+    # 최근 3년 CAGR
+    recent = revenues[-min(4, len(revenues)):]
+    n      = len(recent) - 1
+    cagr   = (recent[-1] / recent[0]) ** (1 / n) - 1 if recent[0] > 0 else 0.0
+
+    # 연도별 성장률 변동성
+    yoy = []
+    for i in range(1, len(revenues)):
+        if revenues[i - 1] > 0:
+            yoy.append((revenues[i] - revenues[i - 1]) / revenues[i - 1])
+    volatile = (statistics.stdev(yoy) >= 0.25) if len(yoy) >= 2 else False
+
+    tgr = terminal_growth_rate
+
+    if cagr > 0.30:
+        profile = "high_growth_fade_down"
+        if volatile:
+            # 변동성 큰 고성장: cap을 한 단계 더 강하게
+            rates = [
+                min(cagr, 0.25),
+                min(cagr * 0.55, 0.18),
+                min(cagr * 0.38, 0.12),
+                min(cagr * 0.25, 0.08),
+                min(cagr * 0.15, 0.05),
+            ]
+            note = (f"최근 CAGR {cagr:.1%}이 30%를 초과하고 연도별 변동성이 큽니다. "
+                    "CAGR 직접 적용 금지 — 변동성 조정 보수 시나리오를 적용했습니다.")
+        else:
+            rates = [
+                min(cagr, 0.35),
+                min(cagr * 0.70, 0.25),
+                min(cagr * 0.50, 0.18),
+                min(cagr * 0.35, 0.12),
+                min(cagr * 0.25, 0.08),
+            ]
+            note = f"최근 CAGR {cagr:.1%}이 30%를 초과해 고성장 정상화 시나리오를 적용했습니다."
+
+    elif cagr > 0.05:
+        profile = "moderate_growth_convergence"
+        if volatile:
+            # 변동성 큰 중성장: CAGR 대신 median 기반 cap 적용
+            import statistics as _st
+            med = _st.median(yoy) if yoy else cagr
+            base = min(med, cagr * 0.80)
+            rates = [
+                base,
+                base * 0.75,
+                base * 0.55,
+                base * 0.35,
+                max(tgr, base * 0.20),
+            ]
+            note = (f"CAGR {cagr:.1%}이나 연도별 변동성이 큽니다. "
+                    f"median 성장률({med:.1%}) 기반 보수 시나리오를 적용했습니다.")
+        else:
+            rates = [
+                cagr,
+                cagr * 0.75,
+                cagr * 0.55,
+                cagr * 0.35,
+                max(tgr, cagr * 0.20),
+            ]
+            note = f"CAGR {cagr:.1%} 기반으로 terminal growth 방향 점진 수렴을 적용했습니다."
+
+    elif cagr >= 0:
+        profile = "low_growth_stable"
+        rates   = [
+            cagr,
+            max(cagr * 0.90, tgr),
+            max(cagr * 0.75, tgr),
+            max(cagr * 0.60, tgr),
+            tgr,
+        ]
+        note = f"저성장 기업({cagr:.1%})으로 terminal growth 방향 안정적 수렴을 적용했습니다."
+
+    else:
+        profile = "negative_growth_recovery"
+        rates   = [
+            cagr,
+            cagr * 0.50,
+            0.00,
+            tgr,
+            tgr,
+        ]
+        note = f"역성장 기업({cagr:.1%})으로 0% 수렴 회복 시나리오를 적용했습니다."
+
+    return {
+        "profile":             profile,
+        "historical_cagr":     round(cagr, 4),
+        "yearly_growth_rates": [round(r, 4) for r in rates],
+        "volatile":            volatile,
+        "note":                note,
+    }
+
+
+# ── 실질 WACC 계산 ───────────────────────────────────────────────────────
+
+def calculate_full_wacc(dcf_inputs: dict, capm_ke: float, tax_rate: float = 0.24) -> dict:
+    """
+    정식 WACC: Ke × (E/V) + Kd × (1-t) × (D/V)
+    Kd = 이자비용 / 총차입금 (리스부채 제외 — IFRS 16 운영 부채)
+    순현금 기업(총차입금=0)이면 WACC = Ke 그대로 사용.
+    """
+    bs      = dcf_inputs.get("balance_sheet", {})
+    income  = dcf_inputs.get("income_statement", {})
+    base_yr = dcf_inputs.get("company_info", {}).get("base_year", 2024)
+
+    bs_l = bs.get(base_yr, {})
+    total_equity = bs_l.get("total_equity") or 0
+    total_debt   = (
+        (bs_l.get("short_term_borrowings")             or 0) +
+        (bs_l.get("current_portion_of_long_term_debt") or 0) +
+        (bs_l.get("long_term_borrowings")              or 0) +
+        (bs_l.get("bonds_payable")                     or 0)
+    )
+
+    V = total_equity + total_debt
+    if V <= 0:
+        return {"wacc": capm_ke, "note": "자본 데이터 없어 WACC = Ke 사용"}
+
+    w_e = total_equity / V
+    w_d = total_debt   / V
+
+    if total_debt <= 0:
+        return {
+            "wacc":           round(capm_ke, 4),
+            "cost_of_equity": capm_ke,
+            "cost_of_debt":   None,
+            "weight_equity":  1.0,
+            "weight_debt":    0.0,
+            "note":           "무차입 기업 — WACC = CAPM 자기자본비용",
+        }
+
+    inc_l        = income.get(base_yr, {})
+    interest_exp = inc_l.get("interest_expense")
+
+    if interest_exp is None:
+        return {
+            "wacc":           round(capm_ke, 4),
+            "cost_of_equity": capm_ke,
+            "cost_of_debt":   None,
+            "weight_equity":  round(w_e, 4),
+            "weight_debt":    round(w_d, 4),
+            "note":           "이자비용 데이터 없어 WACC = Ke (부채비용 미반영)",
+        }
+
+    kd   = interest_exp / total_debt if total_debt > 0 else 0.0
+    wacc = capm_ke * w_e + kd * (1 - tax_rate) * w_d
+
+    return {
+        "wacc":           round(wacc, 4),
+        "cost_of_equity": capm_ke,
+        "cost_of_debt":   round(kd, 4),
+        "weight_equity":  round(w_e, 4),
+        "weight_debt":    round(w_d, 4),
+        "note": (
+            f"Ke {capm_ke:.2%} × {w_e:.1%} + Kd {kd:.2%} × (1-t) × {w_d:.1%}"
+        ),
+    }
+
+
+# ── 민감도 분석 ───────────────────────────────────────────────────────────
+
+def calculate_sensitivity(
+    dcf_inputs:     dict,
+    base_assumptions: dict,
+    growth_rates:   list | None = None,
+    discount_rates: list | None = None,
+) -> dict:
+    """
+    성장률 × 할인율 조합별 VPS 매트릭스.
+    단일 성장률(revenue_growth_rate)을 변화시켜 각 셀의 VPS를 계산.
+
+    Returns:
+        {"growth_rates": [...], "discount_rates": [...], "matrix": {dr: {gr: vps}}}
+    """
+    if growth_rates  is None:
+        growth_rates  = [0.10, 0.20, 0.30, 0.40, 0.50]
+    if discount_rates is None:
+        discount_rates = [0.07, 0.09, 0.11]
+
+    matrix: dict = {}
+    for dr in discount_rates:
+        row: dict = {}
+        for gr in growth_rates:
+            asm = {k: v for k, v in base_assumptions.items()
+                   if k != "_build_warnings"}
+            asm["revenue_growth_rate"]  = gr
+            asm["revenue_growth_rates"] = None   # 민감도는 단일 성장률로
+            asm["discount_rate"]        = dr
+            result = calculate_dcf(dcf_inputs, asm)
+            row[gr] = result.get("valuation", {}).get("value_per_share")
+        matrix[dr] = row
+
+    return {
+        "growth_rates":  growth_rates,
+        "discount_rates": discount_rates,
+        "matrix":        matrix,
+    }
+
+
 # ── 핵심 함수 ────────────────────────────────────────────────────────────
 
 def build_default_assumptions(dcf_inputs: dict) -> dict:
@@ -78,11 +306,15 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
     shares_data = dcf_inputs.get("shares", {})
     base_year   = dcf_inputs.get("company_info", {}).get("base_year", 2024)
 
-    # ── 매출 성장률 ──────────────────────────────────────────────────────
+    # ── 매출 성장률 (룰 기반 성장 프로파일 분류) ──────────────────────────
     cagr = _cagr_from_income(income, "revenue", 3)
     if cagr is None:
         cagr = 0.05
         warnings.append("매출 CAGR 계산 불가 — 기본값 5% 사용")
+
+    growth_info = classify_growth_profile(income)
+    if growth_info.get("volatile"):
+        warnings.append(growth_info["note"])
 
     # ── 영업이익률 ───────────────────────────────────────────────────────
     margin = _avg_margin_from_income(income, 3)
@@ -134,24 +366,34 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
     elif "미차감" in shares_note:
         warnings.append(f"주식수 출처: {shares_note} — 자기주식 차감값 확인 권장")
 
-    # ── CAPM 참고 할인율 ─────────────────────────────────────────────────
-    mm = dcf_inputs.get("market_metrics", {})
+    # ── CAPM 참고 할인율 + 실질 WACC ────────────────────────────────────
+    mm                 = dcf_inputs.get("market_metrics", {})
     capm_discount_rate = mm.get("capm_discount_rate")
+    tax_rate_val       = 0.24
+
+    full_wacc_result = None
+    if capm_discount_rate:
+        full_wacc_result = calculate_full_wacc(dcf_inputs, capm_discount_rate, tax_rate_val)
 
     return {
-        "revenue_growth_rate":  round(cagr, 4),
-        "operating_margin":     round(margin, 4),
-        "tax_rate":             0.24,
-        "discount_rate":        0.09,           # 보수적 고정값 유지
-        "capm_discount_rate":   capm_discount_rate,  # 참고값 (UI 선택용)
-        "discount_rate_source": "conservative_default",
-        "terminal_growth_rate": 0.015,
-        "capex_ratio":          round(max(capex_ratio, 0), 4),
-        "depreciation_ratio":   round(max(dep_ratio, 0), 4),
-        "working_capital_ratio": 0.00,
-        "net_debt":             round(net_debt, 1),
-        "shares_outstanding":   shares_outstanding,
-        "_build_warnings":      warnings,
+        "revenue_growth_rate":      round(cagr, 4),
+        "revenue_growth_rates":     growth_info["yearly_growth_rates"],
+        "historical_revenue_cagr":  growth_info["historical_cagr"],
+        "growth_profile":           growth_info["profile"],
+        "growth_assumption_note":   growth_info["note"],
+        "operating_margin":         round(margin, 4),
+        "tax_rate":                 tax_rate_val,
+        "discount_rate":            0.09,
+        "capm_discount_rate":       capm_discount_rate,
+        "full_wacc":                full_wacc_result,
+        "discount_rate_source":     "conservative_default",
+        "terminal_growth_rate":     0.015,
+        "capex_ratio":              round(max(capex_ratio, 0), 4),
+        "depreciation_ratio":       round(max(dep_ratio, 0), 4),
+        "working_capital_ratio":    0.00,
+        "net_debt":                 round(net_debt, 1),
+        "shares_outstanding":       shares_outstanding,
+        "_build_warnings":          warnings,
     }
 
 
@@ -184,16 +426,17 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
         return {"error": "최신 연도 매출액이 없어 DCF 계산이 불가합니다.",
                 "warnings": warnings, "assumptions": assumptions}
 
-    g        = assumptions["revenue_growth_rate"]
-    op_margin = assumptions["operating_margin"]
-    tax_rate  = assumptions["tax_rate"]
-    wacc      = assumptions["discount_rate"]
-    tgr       = assumptions["terminal_growth_rate"]
-    cap_r     = assumptions.get("capex_ratio", 0.03)
-    dep_r     = assumptions.get("depreciation_ratio", 0.02)
-    wc_r      = assumptions.get("working_capital_ratio", 0.00)
-    net_debt  = assumptions.get("net_debt") or 0.0
-    shares    = assumptions.get("shares_outstanding")
+    g_single   = assumptions["revenue_growth_rate"]   # 하위 호환 단일값
+    g_yearly   = assumptions.get("revenue_growth_rates")  # 2-Stage 연도별 리스트
+    op_margin  = assumptions["operating_margin"]
+    tax_rate   = assumptions["tax_rate"]
+    wacc       = assumptions["discount_rate"]
+    tgr        = assumptions["terminal_growth_rate"]
+    cap_r      = assumptions.get("capex_ratio", 0.03)
+    dep_r      = assumptions.get("depreciation_ratio", 0.02)
+    wc_r       = assumptions.get("working_capital_ratio", 0.00)
+    net_debt   = assumptions.get("net_debt") or 0.0
+    shares     = assumptions.get("shares_outstanding")
 
     if wacc <= tgr:
         return {
@@ -201,26 +444,28 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
             "warnings": warnings, "assumptions": assumptions,
         }
 
-    # ── 5개년 추정 ───────────────────────────────────────────────────────
+    # ── 5개년 추정 (연도별 성장률 있으면 2-Stage, 없으면 단일값 fallback) ──
     projection: dict[int, dict] = {}
     cumulative_discount = 1.0
-    pv_fcf_sum = 0.0
+    pv_fcf_sum  = 0.0
     prev_revenue = base_revenue
 
     for i in range(1, 6):
-        revenue   = base_revenue * ((1 + g) ** i)
+        g_i      = g_yearly[i - 1] if g_yearly and len(g_yearly) >= i else g_single
+        revenue  = prev_revenue * (1 + g_i)
         op_profit = revenue * op_margin
-        nopat     = op_profit * (1 - tax_rate)
-        dep       = revenue * dep_r
-        capex     = revenue * cap_r
-        delta_wc  = (revenue - prev_revenue) * wc_r
-        fcf       = nopat + dep - capex - delta_wc
+        nopat    = op_profit * (1 - tax_rate)
+        dep      = revenue * dep_r
+        capex    = revenue * cap_r
+        delta_wc = (revenue - prev_revenue) * wc_r
+        fcf      = nopat + dep - capex - delta_wc
 
         cumulative_discount *= (1 + wacc)
         pv_fcf     = fcf / cumulative_discount
         pv_fcf_sum += pv_fcf
 
         projection[i] = {
+            "growth_rate":       round(g_i, 4),
             "revenue":           round(revenue, 1),
             "operating_profit":  round(op_profit, 1),
             "nopat":             round(nopat, 1),
@@ -280,18 +525,23 @@ if __name__ == "__main__":
 
     print("\n[ 기본 가정 ]")
     asm = result.get("assumptions", {})
-    print(f"  매출 성장률    : {asm.get('revenue_growth_rate', 0):.2%}")
+    print(f"  성장 프로파일  : {asm.get('growth_profile')}")
+    print(f"  역사적 CAGR    : {asm.get('historical_revenue_cagr', 0):.2%}")
+    rates = asm.get('revenue_growth_rates', [])
+    print(f"  연도별 성장률  : {[f'{r:.1%}' for r in rates]}")
     print(f"  영업이익률     : {asm.get('operating_margin', 0):.2%}")
     print(f"  할인율(WACC)   : {asm.get('discount_rate', 0):.2%}")
+    print(f"  CAPM 참고값    : {asm.get('capm_discount_rate', 0):.2%}" if asm.get('capm_discount_rate') else "  CAPM 참고값    : N/A")
     print(f"  영구성장률     : {asm.get('terminal_growth_rate', 0):.2%}")
     print(f"  법인세율       : {asm.get('tax_rate', 0):.2%}")
     print(f"  CAPEX ratio    : {asm.get('capex_ratio', 0):.2%}")
     print(f"  감가상각 ratio : {asm.get('depreciation_ratio', 0):.2%}")
     print(f"  순차입금       : {asm.get('net_debt', 0):.1f}억원")
+    print(f"  성장 가정 노트 : {asm.get('growth_assumption_note')}")
 
     print("\n[ 5개년 추정 ]")
     for yr, p in result.get("projection", {}).items():
-        print(f"  {yr}년차: 매출 {p['revenue']:.0f}억 | FCF {p['fcf']:.0f}억 | PV_FCF {p['pv_fcf']:.0f}억")
+        print(f"  {yr}년차 (g={p['growth_rate']:.1%}): 매출 {p['revenue']:.0f}억 | FCF {p['fcf']:.0f}억 | PV_FCF {p['pv_fcf']:.0f}억")
 
     val = result.get("valuation", {})
     print("\n[ 기업가치 ]")

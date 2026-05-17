@@ -536,12 +536,15 @@ def get_dcf_inputs(company_name: str) -> dict:
                                  ["당기순이익", "당기순손익", "당기순이익(손실)", "연결당기순이익"])
             tax = _match_account(items, ("IS", "CIS"),
                                  ["법인세비용", "법인세비용(수익)"])
+            int_exp = _match_account(items, ("IS", "CIS"),
+                                 ["이자비용", "금융비용", "이자원가"])
             if rev is not None or op is not None:
                 income_statement[year] = {
-                    "revenue": rev,
+                    "revenue":          rev,
                     "operating_profit": op,
-                    "net_income": net,
-                    "tax_expense": tax,
+                    "net_income":       net,
+                    "tax_expense":      tax,
+                    "interest_expense": int_exp,
                 }
 
         # ── 재무상태표 (BS) — 최신 연도 ─────────────────────────────────
