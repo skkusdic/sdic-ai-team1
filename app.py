@@ -19,7 +19,8 @@ except Exception:
 from graph import pipeline
 from rag import retrieve, answer_with_rag
 from text2sql import run_text2sql
-from data import DB_PATH
+from data import DB_PATH, get_dcf_inputs
+from valuation import build_default_assumptions, calculate_dcf
 
 st.set_page_config(page_title="AI 재무 컨설팅 어시스턴트", layout="wide")
 
@@ -468,10 +469,10 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             "영업이익률 (%)":  "{:.1f}".format,
         }).set_properties(**{"text-align": "center"}).set_table_styles(
             [{"selector": "th", "props": [("text-align", "center")]}]
-        )
+        ).hide(axis="index")
 
         # ── 탭 ──
-        tab1, tab2, tab3, tab4 = st.tabs(["재무 데이터", "Claude 분석", "AI 질문 (RAG + Text2SQL)", "기업 비교"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["재무 데이터", "Claude 분석", "AI 질문 (RAG + Text2SQL)", "기업 비교", "DCF 밸류에이션"])
 
         with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
@@ -801,6 +802,76 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         st.plotly_chart(fig_cmp, use_container_width=True)
 
             st.markdown('</div>', unsafe_allow_html=True)
+
+        with tab5:
+            st.subheader("DCF 밸류에이션")
+            company_name = st.session_state.get("company", "")
+            if not company_name:
+                st.info("왼쪽 사이드바에서 기업명을 입력하고 분석을 시작해주세요.")
+            else:
+                with st.spinner("DCF 입력 데이터 수집 중..."):
+                    dcf_inputs = get_dcf_inputs(company_name)
+
+                if not dcf_inputs:
+                    st.error("DCF 데이터를 불러오지 못했습니다. 기업명을 확인해주세요.")
+                else:
+                    assumptions = build_default_assumptions(dcf_inputs)
+
+                    st.markdown("### 가정 조정")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        g = st.slider("매출 성장률", 0.0, 0.3,
+                                      float(assumptions["revenue_growth_rate"]), 0.01,
+                                      format="%.0f%%", key="dcf_g")
+                        margin = st.slider("영업이익률", 0.0, 0.5,
+                                           float(assumptions["operating_margin"]), 0.01,
+                                           format="%.0f%%", key="dcf_m")
+                        wacc = st.slider("할인율 (WACC)", 0.05, 0.2,
+                                         float(assumptions["discount_rate"]), 0.005,
+                                         format="%.1f%%", key="dcf_w")
+                    with col2:
+                        tgr = st.slider("영구성장률", 0.0, 0.05,
+                                        float(assumptions["terminal_growth_rate"]), 0.005,
+                                        format="%.1f%%", key="dcf_tgr")
+                        tax = st.slider("법인세율", 0.1, 0.35,
+                                        float(assumptions["tax_rate"]), 0.01,
+                                        format="%.0f%%", key="dcf_tax")
+
+                    assumptions.update({
+                        "revenue_growth_rate": g,
+                        "operating_margin": margin,
+                        "discount_rate": wacc,
+                        "terminal_growth_rate": tgr,
+                        "tax_rate": tax,
+                    })
+
+                    result = calculate_dcf(dcf_inputs, assumptions)
+
+                    if result.get("error"):
+                        st.error(result["error"])
+                    else:
+                        val = result["valuation"]
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Enterprise Value", f"{val['enterprise_value']:,.0f}억원")
+                        c2.metric("Equity Value", f"{val['equity_value']:,.0f}억원")
+                        vps = val.get("value_per_share")
+                        c3.metric("주당 가치", f"{vps:,}원" if vps else "N/A")
+
+                        st.markdown("### 5개년 추정")
+                        import pandas as pd
+                        proj = result["projection"]
+                        df = pd.DataFrame([
+                            {"연차": f"{yr}년차",
+                             "매출(억원)": p["revenue"],
+                             "FCF(억원)": p["fcf"],
+                             "PV_FCF(억원)": p["pv_fcf"]}
+                            for yr, p in proj.items()
+                        ])
+                        st.dataframe(df, use_container_width=True)
+
+                        if result.get("warnings"):
+                            for w in result["warnings"]:
+                                st.warning(w)
 
         # ── PDF 다운로드 (탭 밖) ──
         if pdf_path and os.path.exists(pdf_path):
