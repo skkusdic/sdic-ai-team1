@@ -134,11 +134,17 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
     elif "미차감" in shares_note:
         warnings.append(f"주식수 출처: {shares_note} — 자기주식 차감값 확인 권장")
 
+    # ── CAPM 참고 할인율 ─────────────────────────────────────────────────
+    mm = dcf_inputs.get("market_metrics", {})
+    capm_discount_rate = mm.get("capm_discount_rate")
+
     return {
         "revenue_growth_rate":  round(cagr, 4),
         "operating_margin":     round(margin, 4),
         "tax_rate":             0.24,
-        "discount_rate":        0.09,
+        "discount_rate":        0.09,           # 보수적 고정값 유지
+        "capm_discount_rate":   capm_discount_rate,  # 참고값 (UI 선택용)
+        "discount_rate_source": "conservative_default",
         "terminal_growth_rate": 0.015,
         "capex_ratio":          round(max(capex_ratio, 0), 4),
         "depreciation_ratio":   round(max(dep_ratio, 0), 4),

@@ -387,13 +387,122 @@ def _fetch_shares(corp_code: str) -> dict:
     return empty
 
 
+def get_current_price(stock_code: str) -> dict | None:
+    """
+    FinanceDataReader로 현재 주가 조회.
+
+    Args:
+        stock_code: KRX 종목코드 (예: "278470")
+    Returns:
+        {"current_price": int, "date": str} or None (조회 실패 시)
+    """
+    if not stock_code:
+        return None
+    try:
+        import FinanceDataReader as fdr
+        df = fdr.DataReader(stock_code)
+        if df is None or df.empty:
+            return None
+        last_row = df.iloc[-1]
+        return {
+            "current_price": int(last_row["Close"]),
+            "date": str(df.index[-1].date()),
+        }
+    except Exception as e:
+        print(f"[get_current_price] 주가 조회 실패 ({stock_code}): {e}")
+        return None
+
+
+def calculate_beta(stock_code: str, period_years: int = 2) -> dict | None:
+    """
+    KOSPI 대비 일간 수익률 회귀로 beta 계산.
+
+    Args:
+        stock_code: KRX 종목코드 (예: "278470")
+        period_years: 분석 기간 (기본 2년)
+    Returns:
+        {"beta": float, "period_years": int, "index": str, "method": str} or None
+    """
+    if not stock_code:
+        return None
+    try:
+        import FinanceDataReader as fdr
+        import numpy as np
+        from datetime import datetime, timedelta
+
+        end   = datetime.today()
+        start = end - timedelta(days=period_years * 365)
+
+        stock = fdr.DataReader(stock_code, start, end)
+        kospi = fdr.DataReader("^KS11",    start, end)
+
+        if stock is None or stock.empty or kospi is None or kospi.empty:
+            return None
+
+        common  = stock.index.intersection(kospi.index)
+        if len(common) < 60:
+            return None
+
+        s_ret = stock.loc[common, "Close"].pct_change().dropna()
+        k_ret = kospi.loc[common, "Close"].pct_change().dropna()
+        common2 = s_ret.index.intersection(k_ret.index)
+        s_ret = s_ret.loc[common2]
+        k_ret = k_ret.loc[common2]
+
+        cov  = np.cov(s_ret, k_ret)
+        beta = float(cov[0, 1] / cov[1, 1])
+
+        return {
+            "beta":         round(beta, 4),
+            "period_years": period_years,
+            "index":        "KOSPI (^KS11)",
+            "method":       "daily_return_regression",
+        }
+    except Exception as e:
+        print(f"[calculate_beta] beta 계산 실패 ({stock_code}): {e}")
+        return None
+
+
+def calculate_capm_discount_rate(
+    stock_code: str,
+    risk_free_rate: float = 0.042,
+    equity_risk_premium: float = 0.055,
+) -> dict | None:
+    """
+    CAPM 기반 자기자본비용 proxy 계산.
+    정식 WACC(부채비용·자본구조 가중평균) 아님.
+
+    Args:
+        stock_code: KRX 종목코드
+        risk_free_rate: 무위험수익률 (기본 4.2% — 한국 10년물 근사)
+        equity_risk_premium: 시장 위험 프리미엄 (기본 5.5% 고정 가정)
+    Returns:
+        {"discount_rate", "beta", "risk_free_rate", "equity_risk_premium", "method", "source_note"} or None
+    """
+    beta_result = calculate_beta(stock_code)
+    if beta_result is None:
+        return None
+
+    beta = beta_result["beta"]
+    discount_rate = risk_free_rate + beta * equity_risk_premium
+
+    return {
+        "discount_rate":        round(discount_rate, 4),
+        "beta":                 beta,
+        "risk_free_rate":       risk_free_rate,
+        "equity_risk_premium":  equity_risk_premium,
+        "method":               "CAPM cost of equity proxy",
+        "source_note":          "Rf and ERP are fixed assumptions, not automatically updated market data.",
+    }
+
+
 def get_dcf_inputs(company_name: str) -> dict:
     """
     DCF 시뮬레이션용 DART 재무 데이터 수집.
 
     반환 구조:
-        company_info / income_statement / balance_sheet / cash_flow / shares
-    단위: 억원 (shares 제외).
+        company_info / income_statement / balance_sheet / cash_flow / shares / market_metrics
+    단위: 억원 (shares·market_metrics 제외, market_metrics는 원 단위).
     계정 누락 시 None 반환, 예외 발생 시 빈 dict 반환.
     """
     try:
@@ -516,6 +625,39 @@ def get_dcf_inputs(company_name: str) -> dict:
         # ── 주식 수 ───────────────────────────────────────────────────────
         shares = _fetch_shares(corp_code)
 
+        # ── 시장 지표 (PER/PBR/Beta/CAPM) ────────────────────────────────
+        price_data   = get_current_price(stock_code)
+        capm_data    = calculate_capm_discount_rate(stock_code)
+        shares_out   = shares.get("shares_outstanding")
+
+        current_price = price_data.get("current_price") if price_data else None
+        price_date    = price_data.get("date")          if price_data else None
+
+        latest_inc = income_statement.get(base_year, {})
+        net_income = latest_inc.get("net_income")
+        total_eq   = balance_sheet.get(base_year, {}).get("total_equity")
+
+        # EPS/BPS: 억원 → 원 변환 후 주식수로 나눔
+        eps = round(net_income * 100_000_000 / shares_out) if (net_income and shares_out) else None
+        bps = round(total_eq  * 100_000_000 / shares_out) if (total_eq  and shares_out) else None
+        per = round(current_price / eps, 2) if (current_price and eps and eps > 0) else None
+        pbr = round(current_price / bps, 2) if (current_price and bps and bps > 0) else None
+
+        market_metrics = {
+            "current_price":        current_price,
+            "price_date":           price_date,
+            "eps":                  eps,
+            "bps":                  bps,
+            "per":                  per,
+            "pbr":                  pbr,
+            "beta":                 capm_data.get("beta")                if capm_data else None,
+            "capm_discount_rate":   capm_data.get("discount_rate")       if capm_data else None,
+            "risk_free_rate":       capm_data.get("risk_free_rate")      if capm_data else 0.042,
+            "equity_risk_premium":  capm_data.get("equity_risk_premium") if capm_data else 0.055,
+            "discount_rate_method": "CAPM cost of equity proxy",
+            "source_note":          "CAPM discount rate is a reference value only. Rf and ERP are fixed assumptions.",
+        }
+
         return {
             "company_info": {
                 "corp_name":  corp_name,
@@ -527,6 +669,7 @@ def get_dcf_inputs(company_name: str) -> dict:
             "balance_sheet":    balance_sheet,
             "cash_flow":        cash_flow,
             "shares":           shares,
+            "market_metrics":   market_metrics,
         }
 
     except Exception as e:
