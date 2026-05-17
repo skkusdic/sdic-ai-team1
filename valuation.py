@@ -338,13 +338,15 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
         capex_ratio = 0.03
         warnings.append("CAPEX 데이터가 없어 기본 CAPEX ratio 3%를 사용했습니다.")
 
-    # ── 감가상각 ratio (유형+무형 합산값 우선, 없으면 유형 단독) ────────────
+    # ── 감가상각 ratio ───────────────────────────────────────────────────────
     dep = cf_latest.get("depreciation_total") or cf_latest.get("depreciation")
     if dep is not None and latest_revenue:
         dep_ratio = dep / latest_revenue
+        if cf_latest.get("depreciation_estimated"):
+            warnings.append("감가상각비를 DART CF에서 직접 조회할 수 없어 BS 유형자산 변동으로 역산했습니다.")
     else:
         dep_ratio = 0.02
-        warnings.append("감가상각비 데이터가 없어 기본 감가상각 ratio 2%를 사용했습니다.")
+        warnings.append("감가상각비 데이터가 없어 기본값 2%(매출 대비)를 사용했습니다.")
 
     # ── 순차입금 ─────────────────────────────────────────────────────────
     bs_latest  = bs.get(base_year, {})
