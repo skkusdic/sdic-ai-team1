@@ -22,45 +22,6 @@ _REVENUE_LABELS = {"매출액", "영업수익", "수익(매출액)", "매출"}
 _OPERATING_LABELS = {"영업이익", "영업이익(손실)", "영업손실"}
 _NET_LABELS = {"당기순이익", "당기순이익(손실)", "당기순손실"}
 
-# 영문 입력 → 한국어 회사명 변환 (대소문자 무시)
-_EN_TO_KR = {
-    "apr": "에이피알",
-    "samsung": "삼성전자",
-    "kakao": "카카오",
-    "hyundai": "현대자동차",
-    "kia": "기아",
-    "lg": "LG전자",
-    "sk hynix": "SK하이닉스",
-    "hynix": "SK하이닉스",
-    "naver": "NAVER",
-    "kt": "케이티",
-    "posco": "POSCO홀딩스",
-    "lotte": "롯데쇼핑",
-    "celltrion": "셀트리온",
-    "krafton": "크래프톤",
-    "ncsoft": "엔씨소프트",
-    "netmarble": "넷마블",
-}
-
-# DART에 영문/약어로 등록된 회사 한글 별칭
-_CORP_ALIASES = {
-    "네이버": "NAVER",
-    "케이티": "KT",
-    "에스케이텔레콤": "SK텔레콤",
-    "엘지전자": "LG전자",
-    "엘지이노텍": "LG이노텍",
-    "엘지화학": "LG화학",
-    "엘지에너지솔루션": "LG에너지솔루션",
-    "엘지생활건강": "LG생활건강",
-    "엘지유플러스": "LG유플러스",
-    "에스케이하이닉스": "SK하이닉스",
-    "에스케이이노베이션": "SK이노베이션",
-    "현대차": "현대자동차",
-    "기아차": "기아",
-    "포스코": "POSCO홀딩스",
-    "비비큐": "BBQ",
-}
-
 
 def _get_corp_list():
     global _corp_list_cache
@@ -69,35 +30,31 @@ def _get_corp_list():
     return _corp_list_cache
 
 
-def _translate_to_korean(name: str) -> str:
-    """영문/혼합 입력을 DART 공시 한국어 회사명으로 변환. 실패 시 빈 문자열 반환."""
-    prompt = (
-        f'다음은 사용자가 입력한 한국 기업명입니다: "{name}"\n'
-        "이 기업의 DART(금융감독원 전자공시) 공시에 사용되는 정확한 한국어 회사명을 "
-        "한 단어로만 답하세요. 모르면 UNKNOWN이라고만 답하세요."
-    )
-    result = ask(prompt, max_tokens=20).strip()
-    if result == "UNKNOWN" or not result:
-        return ""
-    return result
+def _is_english(text: str) -> bool:
+    alpha = sum(1 for c in text if c.isascii() and c.isalpha())
+    return alpha / max(len(text), 1) >= 0.5
+
+
+def _normalize_name(company_name: str) -> str:
+    """영문 입력이면 Claude로 DART 등록 회사명으로 변환, 한국어면 그대로 반환."""
+    if not _is_english(company_name):
+        return company_name
+    from claude_client import ask
+    result = ask(
+        f"'{company_name}'은 한국 어느 기업입니까? "
+        "DART(금융감독원 전자공시시스템)에 등록된 정식 회사명만 답하세요. "
+        "회사명 외 다른 말은 절대 쓰지 마세요.",
+        max_tokens=30,
+    ).strip()
+    return result if result else company_name
 
 
 def _find_corp_code(company_name: str) -> str:
     corp_list = _get_corp_list()
     raw = company_name.strip()
-    # 1순위: 하드코딩 딕셔너리
-    raw = _EN_TO_KR.get(raw.lower(), raw)
-    # 2순위: 한국어가 아닌 문자 포함 시 Claude 번역
-    if any(ord(c) < 0xAC00 or ord(c) > 0xD7A3 for c in raw if c.isalpha()):
-        translated = _translate_to_korean(raw)
-        if translated:
-            raw = translated
-    no_space = raw.replace(" ", "")
-    candidates = [raw]
-    if no_space != raw:
-        candidates.append(no_space)
-    if no_space in _CORP_ALIASES:
-        candidates.append(_CORP_ALIASES[no_space])
+    normalized = _normalize_name(raw)
+
+    candidates = list(dict.fromkeys([normalized, raw, normalized.replace(" ", ""), raw.replace(" ", "")]))
 
     for cand in candidates:
         results = corp_list.find_by_corp_name(cand, exactly=True) or []
@@ -307,18 +264,337 @@ def get_business_report_text(company_name: str, year: int = None) -> str:
     return text
 
 
+# ── DCF 입력값 수집 ──────────────────────────────────────────────────────
+
+def _fetch_statements_raw(corp_code: str, year: int, fs_div: str) -> list:
+    """fnlttSinglAcntAll API 원시 항목 리스트 반환. 실패 시 빈 리스트."""
+    params = {
+        "crtfc_key": DART_API_KEY,
+        "corp_code": corp_code,
+        "bsns_year": str(year),
+        "reprt_code": "11011",
+        "fs_div": fs_div,
+    }
+    try:
+        resp = requests.get(DART_ENDPOINT, params=params, timeout=15).json()
+        return resp.get("list", [])
+    except Exception:
+        return []
+
+
+def _parse_item_amount(item: dict) -> int | None:
+    """DART 항목의 당기 금액을 억원 단위 정수로 파싱. 없으면 None."""
+    amt = item.get("thstrm_amount", "").replace(",", "").strip()
+    if not amt or amt == "-":
+        return None
+    try:
+        return int(int(amt) / 100_000_000)
+    except (ValueError, TypeError):
+        return None
+
+
+def _match_account(items: list, sj_divs: tuple, candidates: list) -> int | None:
+    """items에서 sj_div + account_nm 후보 매칭. 정확 일치 → 부분 포함 순으로 시도."""
+    # 1단계: 정확 일치
+    for cand in candidates:
+        for item in items:
+            if item.get("sj_div") not in sj_divs:
+                continue
+            if item.get("account_nm", "").strip() == cand:
+                val = _parse_item_amount(item)
+                if val is not None:
+                    return val
+    # 2단계: 부분 포함 (회사별 계정명 표기 차이 대응)
+    for cand in candidates:
+        for item in items:
+            if item.get("sj_div") not in sj_divs:
+                continue
+            nm = item.get("account_nm", "").strip().replace(" ", "")
+            key = cand.replace(" ", "")
+            if key in nm or nm in key:
+                val = _parse_item_amount(item)
+                if val is not None:
+                    return val
+    return None
+
+
+def _find_corp_obj(company_name: str):
+    """회사명으로 DART 기업 객체 반환. 없으면 None."""
+    corp_list = _get_corp_list()
+    raw = company_name.strip()
+    normalized = _normalize_name(raw)
+    candidates = list(dict.fromkeys([normalized, raw, normalized.replace(" ", ""), raw.replace(" ", "")]))
+
+    for cand in candidates:
+        results = corp_list.find_by_corp_name(cand, exactly=True) or []
+        listed = [r for r in results if r.stock_code]
+        if listed:
+            return listed[0]
+        if results:
+            return results[0]
+
+    for cand in candidates:
+        results = corp_list.find_by_corp_name(cand, exactly=False) or []
+        listed = [r for r in results if r.stock_code]
+        pool = listed if listed else results
+        if pool:
+            return min(pool, key=lambda r: len(r.corp_name))
+
+    return None
+
+
+def _fetch_shares(corp_code: str) -> dict:
+    """DART 주식 수 조회. bsns_year 포함/미포함 두 번 시도. 실패 시 None 반환."""
+    empty = {"shares_outstanding": None, "treasury_shares": None, "common_shares": None, "source_note": "조회실패"}
+    base_year = datetime.now().year - 1
+
+    def _to_int(val: str) -> int | None:
+        v = val.replace(",", "").strip()
+        return int(v) if v.lstrip("-").isdigit() else None
+
+    # reprt_code 11011 = 사업보고서 (필수 파라미터)
+    for year in [base_year, base_year - 1]:
+        try:
+            resp = requests.get(
+                "https://opendart.fss.or.kr/api/stockTotqySttus.json",
+                params={"crtfc_key": DART_API_KEY, "corp_code": corp_code,
+                        "bsns_year": str(year), "reprt_code": "11011"},
+                timeout=10,
+            ).json()
+            items = resp.get("list", [])
+            if not items:
+                continue
+            # 보통주 행 우선, 없으면 첫 번째 행
+            row = next((r for r in items if r.get("se") == "보통주"), items[0])
+            treasury = _to_int(row.get("tesstk_co", ""))
+            distb    = _to_int(row.get("distb_stock_co", ""))
+            issued   = _to_int(row.get("istc_totqy", ""))
+            # 유통주식수(자기주식 차감) 우선; 없으면 발행주식총수
+            if distb is not None:
+                outstanding = distb
+                note = "유통주식수(자기주식차감, 보통주)"
+            else:
+                outstanding = issued
+                note = "발행주식총수(자기주식미차감, 보통주)"
+            return {
+                "shares_outstanding": outstanding,
+                "treasury_shares":    treasury,
+                "common_shares":      distb,
+                "source_note":        note,
+            }
+        except Exception:
+            continue
+    return empty
+
+
+def get_dcf_inputs(company_name: str) -> dict:
+    """
+    DCF 시뮬레이션용 DART 재무 데이터 수집.
+
+    반환 구조:
+        company_info / income_statement / balance_sheet / cash_flow / shares
+    단위: 억원 (shares 제외).
+    계정 누락 시 None 반환, 예외 발생 시 빈 dict 반환.
+    """
+    try:
+        corp_obj = _find_corp_obj(company_name)
+        if corp_obj is None:
+            print(f"[get_dcf_inputs] 기업 미발견: {company_name}")
+            return {}
+
+        corp_code  = corp_obj.corp_code
+        stock_code = getattr(corp_obj, "stock_code", "") or ""
+        corp_name  = getattr(corp_obj, "corp_name", company_name)
+        base_year  = datetime.now().year - 1  # 전년도 = 최신 사업연도
+
+        # ── 연도별 원시 데이터 수집 (5개년, API 호출 최소화) ──────────────
+        year_items: dict[int, list] = {}
+        for year in range(base_year - 4, base_year + 1):
+            items = _fetch_statements_raw(corp_code, year, "CFS")
+            if not items:
+                items = _fetch_statements_raw(corp_code, year, "OFS")
+            if items:
+                year_items[year] = items
+
+        # ── 손익계산서 (IS/CIS) ──────────────────────────────────────────
+        income_statement: dict[int, dict] = {}
+        for year, items in year_items.items():
+            rev = _match_account(items, ("IS", "CIS"),
+                                 ["매출액", "수익(매출액)", "영업수익"])
+            op  = _match_account(items, ("IS", "CIS"),
+                                 ["영업이익", "영업손익", "영업이익(손실)"])
+            net = _match_account(items, ("IS", "CIS"),
+                                 ["당기순이익", "당기순손익", "당기순이익(손실)", "연결당기순이익"])
+            tax = _match_account(items, ("IS", "CIS"),
+                                 ["법인세비용", "법인세비용(수익)"])
+            if rev is not None or op is not None:
+                income_statement[year] = {
+                    "revenue": rev,
+                    "operating_profit": op,
+                    "net_income": net,
+                    "tax_expense": tax,
+                }
+
+        # ── 재무상태표 (BS) — 최신 연도 ─────────────────────────────────
+        latest_items = year_items.get(base_year, [])
+
+        # 리스부채: 유동 + 비유동 합산 (부분 매칭으로 한쪽만 잡히는 문제 방지)
+        _lease_c  = _match_account(latest_items, ("BS",), ["유동리스부채", "유동성리스부채"])
+        _lease_nc = _match_account(latest_items, ("BS",), ["비유동리스부채", "장기리스부채"])
+        if _lease_c is not None or _lease_nc is not None:
+            _lease_total: int | None = (_lease_c or 0) + (_lease_nc or 0)
+        else:
+            # 일부 회사는 단일 "리스부채" 계정 사용
+            _lease_total = _match_account(latest_items, ("BS",), ["리스부채"])
+
+        balance_sheet = {
+            base_year: {
+                "cash_and_cash_equivalents":         _match_account(latest_items, ("BS",), ["현금및현금성자산"]),
+                "short_term_borrowings":             _match_account(latest_items, ("BS",), ["단기차입금"]),
+                "current_portion_of_long_term_debt": _match_account(latest_items, ("BS",), ["유동성장기부채", "유동성장기차입금"]),
+                "long_term_borrowings":              _match_account(latest_items, ("BS",), ["장기차입금"]),
+                "bonds_payable":                     _match_account(latest_items, ("BS",), ["사채", "회사채"]),
+                "lease_liabilities":                 _lease_total,
+                "total_assets":                      _match_account(latest_items, ("BS",), ["자산총계"]),
+                "total_liabilities":                 _match_account(latest_items, ("BS",), ["부채총계"]),
+                "total_equity":                      _match_account(latest_items, ("BS",), ["자본총계"]),
+            }
+        }
+
+        # ── 현금흐름표 (CF) — 최신 연도 ─────────────────────────────────
+        # CAPEX는 지출(음수)이므로 abs 처리
+        def _abs_account(items, divs, cands):
+            val = _match_account(items, divs, cands)
+            return abs(val) if val is not None else None
+
+        _dep  = _match_account(latest_items, ("CF",),
+                               ["감가상각비", "유형자산감가상각비",
+                                "감가상각비및상각비", "감가상각및상각비"])
+        _amor = _match_account(latest_items, ("CF",), ["무형자산상각비"])
+        _roua = _match_account(latest_items, ("CF",), ["사용권자산상각비"])
+
+        # 합산 계정이 있는지 확인 — 있으면 그것만, 없으면 유형+무형 합산
+        _dep_combined_nm = ["감가상각비및상각비", "감가상각및상각비"]
+        _is_combined = any(
+            it.get("account_nm", "").strip().replace(" ", "") in
+            [c.replace(" ", "") for c in _dep_combined_nm]
+            for it in latest_items if it.get("sj_div") == "CF"
+        )
+        if _is_combined:
+            _pp_amor = _dep                          # 합산 계정 그대로
+        else:
+            _dep_t  = _dep  or 0
+            _amor_t = _amor or 0
+            _pp_amor = (_dep_t + _amor_t) if (_dep is not None or _amor is not None) else None
+
+        # IFRS 16 일관성: ROUA상각비 별도 보관 → valuation에서 D&A에 합산
+        # (영업이익이 이미 ROUA상각비를 차감했으므로 FCF 계산 시 다시 더해야 함)
+        if _pp_amor is not None or _roua is not None:
+            _dep_total: int | None = (_pp_amor or 0) + (_roua or 0)
+        else:
+            _dep_total = None
+
+        cash_flow = {
+            base_year: {
+                "cash_flow_from_operations": _match_account(latest_items, ("CF",),
+                                             ["영업활동현금흐름", "영업활동으로 인한 현금흐름", "영업활동으로인한현금흐름"]),
+                "capex_tangible":            _abs_account(latest_items, ("CF",),
+                                             ["유형자산의 취득", "유형자산 취득",
+                                              "유형자산취득", "유형자산의취득", "유형자산구입",
+                                              "유형자산의 증가", "유형자산증가"]),
+                "capex_intangible":          _abs_account(latest_items, ("CF",),
+                                             ["무형자산의 취득", "무형자산 취득",
+                                              "무형자산취득", "무형자산의취득",
+                                              "무형자산의 증가", "무형자산증가"]),
+                "depreciation":             _dep,     # 유형자산감가상각비 단독
+                "amortization":             _amor,    # 무형자산상각비 단독
+                "roua_depreciation":        _roua,    # 사용권자산상각비(IFRS 16)
+                "depreciation_total":       _dep_total,  # DCF용: 유형+무형+ROUA 합산
+            }
+        }
+
+        # ── 주식 수 ───────────────────────────────────────────────────────
+        shares = _fetch_shares(corp_code)
+
+        return {
+            "company_info": {
+                "corp_name":  corp_name,
+                "corp_code":  corp_code,
+                "stock_code": stock_code,
+                "base_year":  base_year,
+            },
+            "income_statement": income_statement,
+            "balance_sheet":    balance_sheet,
+            "cash_flow":        cash_flow,
+            "shares":           shares,
+        }
+
+    except Exception as e:
+        print(f"[get_dcf_inputs] {company_name} 오류: {e}")
+        return {}
+
+
 if __name__ == "__main__":
     import sys
     import time
     sys.stdout.reconfigure(encoding="utf-8")
 
-    for name in ["에이피알", "카카오", "asdfasdf"]:
+    # ── 기존 get_financials 확인 ─────────────────────────────────────────
+    print("=" * 55)
+    print("[ 1 ] get_financials() 기존 함수 확인")
+    print("=" * 55)
+    for name in ["에이피알", "asdfasdf"]:
         t0 = time.time()
         d = get_financials(name)
-        elapsed = time.time() - t0
-        if not d:
-            print(f"[{name}] no data ({elapsed:.1f}s)")
-            continue
-        print(f"[{name}] {len(d)}개년 ({elapsed:.1f}s)")
-        for y, m in sorted(d.items()):
-            print(f"  {y}: {m}")
+        print(f"  {name}: {len(d)}개년 ({time.time()-t0:.1f}s)" if d else f"  {name}: no data")
+
+    # ── get_dcf_inputs 테스트 ────────────────────────────────────────────
+    print()
+    print("=" * 55)
+    print("[ 2 ] get_dcf_inputs('에이피알') 테스트")
+    print("=" * 55)
+    t0 = time.time()
+    result = get_dcf_inputs("에이피알")
+    elapsed = time.time() - t0
+
+    if not result:
+        print("  결과 없음")
+    else:
+        ci = result["company_info"]
+        print(f"\n  [company_info]")
+        print(f"    corp_name : {ci['corp_name']}")
+        print(f"    corp_code : {ci['corp_code']}")
+        print(f"    stock_code: {ci['stock_code']}")
+        print(f"    base_year : {ci['base_year']}")
+
+        print(f"\n  [income_statement] ({len(result['income_statement'])}개년)")
+        for yr, d in sorted(result["income_statement"].items()):
+            print(f"    {yr}: revenue={d['revenue']}억 | op_profit={d['operating_profit']}억 | net={d['net_income']}억")
+
+        bs = result["balance_sheet"].get(ci["base_year"], {})
+        print(f"\n  [balance_sheet] {ci['base_year']}년")
+        print(f"    현금               : {bs.get('cash_and_cash_equivalents')}억")
+        print(f"    단기차입금         : {bs.get('short_term_borrowings')}억")
+        print(f"    장기차입금         : {bs.get('long_term_borrowings')}억")
+        print(f"    리스부채(유동+비유동): {bs.get('lease_liabilities')}억")
+        print(f"    자산총계           : {bs.get('total_assets')}억")
+        print(f"    자본총계           : {bs.get('total_equity')}억")
+
+        cf = result["cash_flow"].get(ci["base_year"], {})
+        print(f"\n  [cash_flow] {ci['base_year']}년")
+        print(f"    영업활동현금흐름   : {cf.get('cash_flow_from_operations')}억")
+        print(f"    CAPEX(유형)        : {cf.get('capex_tangible')}억")
+        print(f"    CAPEX(무형)        : {cf.get('capex_intangible')}억")
+        print(f"    감가상각비(유형)   : {cf.get('depreciation')}억")
+        print(f"    상각비(무형)       : {cf.get('amortization')}억")
+        print(f"    사용권자산상각비   : {cf.get('roua_depreciation')}억  (IFRS 16)")
+        print(f"    D&A 합계(DCF용)    : {cf.get('depreciation_total')}억")
+
+        sh = result["shares"]
+        print(f"\n  [shares]")
+        print(f"    유통주식수(보통주) : {sh.get('shares_outstanding')}")
+        print(f"    자기주식수         : {sh.get('treasury_shares')}")
+        print(f"    출처               : {sh.get('source_note')}")
+
+    print(f"\n  소요시간: {elapsed:.1f}s")
+    print("=" * 55)
