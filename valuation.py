@@ -7,6 +7,11 @@
 from __future__ import annotations
 
 
+def _normalize(financials: dict) -> dict:
+    """연도 키를 정수로 통일."""
+    return {int(float(k)): v for k, v in financials.items()}
+
+
 def calculate_cagr(financials: dict, metric: str = "매출액", years: int = 3) -> float:
     """최근 N개년 CAGR 계산. 데이터 부족 시 0.0 반환."""
     sorted_years = sorted(financials.keys())
@@ -74,6 +79,7 @@ def calculate_dcf(financial_data: dict, assumptions: dict) -> dict:
     shares = assumptions.get("shares_outstanding", 1.0)  # 만 주
 
     # 기준 매출: 가장 최근 연도 매출액
+    financial_data = _normalize(financial_data)
     if financial_data:
         latest_year = max(financial_data.keys())
         base_revenue = financial_data[latest_year].get("매출액", 0)

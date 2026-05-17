@@ -10,7 +10,13 @@ from data import get_financials
 from db import init_db, load_financials, save_financials
 
 
+def normalize_financials(financials: dict) -> dict:
+    """연도 키를 정수로 통일. str/float/int 모두 허용."""
+    return {int(float(k)): v for k, v in financials.items()}
+
+
 def calculate_financial_ratios(financial_data: dict) -> dict:
+    financial_data = normalize_financials(financial_data)
     """
     연도별 수익성 지표 계산.
 
@@ -40,6 +46,7 @@ def calculate_financial_ratios(financial_data: dict) -> dict:
 
 
 def calculate_growth_rates(financial_data: dict) -> dict:
+    financial_data = normalize_financials(financial_data)
     """
     연도별 YoY 성장률 및 전체 CAGR 계산.
 
@@ -133,6 +140,11 @@ def build_analysis_pipeline(company_name: str) -> dict:
         data_source = "dart"
         if financials:
             save_financials(company_name, financials)
+
+    if not financials:
+        financials = {}
+
+    financials = normalize_financials(financials)
 
     if not financials:
         return {

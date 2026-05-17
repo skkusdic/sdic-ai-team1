@@ -7,6 +7,7 @@ from __future__ import annotations
 from claude_client import ask
 from data import get_financials
 from db import init_db, load_financials, save_financials
+from analysis import normalize_financials
 
 
 def _fetch(company_name: str) -> dict:
@@ -69,8 +70,8 @@ def compare_companies(base_company: str, peer_company: str) -> dict:
         "ai_summary": str,        # Claude 3줄 요약
     }
     """
-    base_financials = _fetch(base_company)
-    peer_financials = _fetch(peer_company)
+    base_financials = normalize_financials(_fetch(base_company))
+    peer_financials = normalize_financials(_fetch(peer_company))
 
     base_name = base_company
     peer_name = peer_company
