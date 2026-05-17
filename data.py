@@ -1,8 +1,10 @@
 import os
 import sqlite3
 import requests
+from datetime import datetime
 
 import dart_fss as dart
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -202,6 +204,88 @@ def get_financials(company_name: str) -> dict:
     data = {str(year): metrics for year, metrics in raw.items()}
     _save_to_db(company_name, data)
     return data
+
+
+# ── 사업보고서 원문 텍스트 추출 ────────────────────────────────────────────
+
+def _html_to_text(html: str) -> str:
+    """BeautifulSoup으로 HTML → 순수 텍스트 변환."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+    return " ".join(soup.get_text(separator=" ").split())
+
+
+def _fetch_business_section(corp_code: str, year: int) -> str:
+    """dart-fss로 사업보고서에서 '사업의 내용' 섹션 텍스트 추출."""
+    try:
+        result = dart.filings.search(
+            corp_code=corp_code,
+            bgn_de=f"{year}0101",
+            end_de=f"{year}1231",
+            pblntf_ty="A",   # 사업보고서
+            page_count=5,
+        )
+    except Exception:
+        return ""
+
+    if not result or len(result) == 0:
+        return ""
+
+    report = result[0]
+    try:
+        pages = report.pages
+    except Exception:
+        return ""
+
+    # "사업의 내용" 타이틀 페이지 찾기 (부분 매칭)
+    target_pages = [
+        p for p in pages
+        if "사업" in p.title and "내용" in p.title
+    ]
+
+    # 못 찾으면 전체 페이지에서 앞 3개 fallback
+    if not target_pages:
+        target_pages = pages[:3]
+
+    texts = []
+    for page in target_pages[:5]:  # 최대 5페이지만 처리
+        try:
+            texts.append(_html_to_text(page.html))
+        except Exception:
+            continue
+
+    return "\n\n".join(texts)
+
+
+def get_business_report_text(company_name: str, year: int = None) -> str:
+    """
+    DART 사업보고서 '사업의 내용' 섹션 텍스트 반환.
+    SQLite 캐시 우선, 없으면 DART에서 파싱 후 저장.
+    year 미지정 시 직전 연도 사용.
+    """
+    from db import init_db, save_business_report, load_business_report
+
+    if year is None:
+        year = datetime.now().year - 1
+
+    init_db()
+
+    cached = load_business_report(company_name, year, "사업의내용")
+    if cached:
+        return cached
+
+    corp_code = _find_corp_code(company_name)
+    if not corp_code:
+        return ""
+
+    text = _fetch_business_section(corp_code, year)
+
+    if not text:
+        return ""
+
+    save_business_report(company_name, year, "사업의내용", text)
+    return text
 
 
 if __name__ == "__main__":

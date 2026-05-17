@@ -41,7 +41,41 @@ def init_db():
                 FOREIGN KEY (corp_name) REFERENCES companies(corp_name)
             )
         """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS business_reports (
+                corp_name  TEXT    NOT NULL,
+                year       INTEGER NOT NULL,
+                section    TEXT    NOT NULL,
+                content    TEXT    NOT NULL,
+                created_at TEXT    DEFAULT (datetime('now')),
+                PRIMARY KEY (corp_name, year, section)
+            )
+        """)
         con.commit()
+
+
+def save_business_report(company_name: str, year: int, section: str, content: str):
+    with _conn() as con:
+        con.execute(
+            """
+            INSERT INTO business_reports (corp_name, year, section, content)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(corp_name, year, section) DO UPDATE SET
+                content    = excluded.content,
+                created_at = datetime('now')
+            """,
+            (company_name, year, section, content),
+        )
+        con.commit()
+
+
+def load_business_report(company_name: str, year: int, section: str) -> str | None:
+    with _conn() as con:
+        row = con.execute(
+            "SELECT content FROM business_reports WHERE corp_name = ? AND year = ? AND section = ?",
+            (company_name, year, section),
+        ).fetchone()
+    return row[0] if row else None
 
 
 def save_financials(company_name: str, financials: dict):

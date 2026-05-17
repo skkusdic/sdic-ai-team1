@@ -127,6 +127,38 @@ def answer(query: str, company: str, financials: dict) -> tuple[str, list[tuple[
     return reply, top3
 
 
+# ── 5. 사업보고서 원문 요약 ────────────────────────────────────────────────
+
+_MAX_REPORT_CHARS = 15_000  # claude-haiku-4-5 비용 제어용 상한
+
+
+def summarize_business_report(text: str, company: str) -> str:
+    """
+    DART 사업보고서 '사업의 내용' 텍스트를 받아 핵심 요약문 반환.
+    텍스트가 없으면 빈 문자열 반환.
+    """
+    if not text or not text.strip():
+        return ""
+
+    # 비용·속도 제어: 상한 초과 시 앞부분만 사용
+    truncated = text[:_MAX_REPORT_CHARS]
+    if len(text) > _MAX_REPORT_CHARS:
+        truncated += "\n\n(이하 생략)"
+
+    prompt = (
+        f"아래는 {company}의 DART 사업보고서 '사업의 내용' 섹션 원문입니다.\n"
+        "발췌에 없는 내용은 절대 추측하지 말고, 원문에 있는 내용만 사용해 핵심을 요약하세요.\n\n"
+        "요약 형식:\n"
+        "1. 주요 사업 영역 (2~3줄)\n"
+        "2. 핵심 제품·서비스 (2~3줄)\n"
+        "3. 경쟁 환경 및 전략 (2~3줄)\n\n"
+        f"[원문]\n{truncated}\n\n"
+        "위 원문만 근거로 한국어로 요약하세요."
+    )
+
+    return ask(prompt, max_tokens=600)
+
+
 # ── app.py 호환 별칭 ──────────────────────────────────────────────────────
 retrieve = search
 

@@ -2,15 +2,26 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from data import get_business_report_text
+from rag import summarize_business_report
 from claude_client import ask
 
 
-def analyze(financials: dict) -> str:
+def analyze(financials: dict, company: str = "") -> str:
+    """
+    DART 사업보고서 원문을 우선 사용해 핵심 요약.
+    원문을 가져오지 못하면 재무 수치 기반 분석으로 fallback.
+    """
+    if company:
+        report_text = get_business_report_text(company)
+        if report_text:
+            return summarize_business_report(report_text, company)
+
+    # fallback: 재무 수치 기반 분석
     rows = "\n".join(
         f"{year}년: 매출 {d.get('매출액', 0):,}억원, 영업이익 {d.get('영업이익', 0):,}억원, 순이익 {d.get('순이익', 0):,}억원"
         for year, d in sorted(financials.items())
     )
-
     latest_year = max(financials.keys())
     latest = financials[latest_year]
     revenue = latest.get("매출액", 0)
@@ -29,19 +40,12 @@ def analyze(financials: dict) -> str:
 
 def analysis_agent(state: dict) -> dict:
     company = state.get("company", "")
-    print(f"[analysis_agent] {company} 분석 중...")
-    result = analyze(state["financials"])
+    print(f"[analysis_agent] {company} 사업보고서 분석 중...")
+    result = analyze(state["financials"], company=company)
     print("[analysis_agent] 분석 완료")
     return {"analysis": result, "result": result}
 
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    mock = {
-        2021: {"매출액": 228867, "영업이익": 8535,   "순이익": 12548},
-        2022: {"매출액": 398593, "영업이익": 43612,  "순이익": 27450},
-        2023: {"매출액": 524059, "영업이익": 104946, "순이익": 81918},
-        2024: {"매출액": 723000, "영업이익": 118397, "순이익": 107095},
-        2025: {"매출액": 1528295,"영업이익": 354121, "순이익": 289938},
-    }
-    print(analyze(mock))
+    print(analyze({}, company="에이피알"))
