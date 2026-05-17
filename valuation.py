@@ -543,15 +543,42 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
         cagr = 0.05
         warnings.append("매출 CAGR 계산 불가 — 기본값 5% 사용")
 
-    growth_info = classify_growth_profile(income)
+    growth_info    = classify_growth_profile(income)
+    company_events = dcf_inputs.get("company_events", {})  # {year: event_dict}
+
     if growth_info.get("volatile"):
         warnings.append(growth_info["note"])
     if growth_info.get("growth_outlier_note"):
-        warnings.append(growth_info["growth_outlier_note"])
+        growth_out_note = growth_info["growth_outlier_note"]
+        warnings.append(growth_out_note)
+        # 성장률 이상치 연도에 대한 이벤트 근거 연결
+        for yr, ev in company_events.items():
+            if str(yr) in growth_out_note and ev.get("event_note"):
+                tags_str = "·".join(ev["event_tags"]) if ev["event_tags"] else ""
+                warnings.append(
+                    f"  └ [{yr}년 공시/뉴스 근거 — 신뢰도 {ev['confidence']}] "
+                    + (f"이벤트 유형: {tags_str}. " if tags_str else "")
+                    + ev["event_note"]
+                )
 
     # ── 영업이익률 ───────────────────────────────────────────────────────
     margin, margin_outlier_notes = _avg_margin_from_income(income)
-    warnings.extend(margin_outlier_notes)
+
+    # 이상치 연도 경고에 DART/뉴스 이벤트 보조 근거 연결
+    enriched_notes: list[str] = []
+    for note in margin_outlier_notes:
+        enriched_notes.append(note)
+        # 경고 문구에서 연도 추출 후 이벤트 데이터 있으면 보조 설명 추가
+        for yr, ev in company_events.items():
+            if str(yr) in note and ev.get("event_note"):
+                tags_str = "·".join(ev["event_tags"]) if ev["event_tags"] else ""
+                enriched_notes.append(
+                    f"  └ [{yr}년 공시/뉴스 근거 — 신뢰도 {ev['confidence']}] "
+                    + (f"이벤트 유형: {tags_str}. " if tags_str else "")
+                    + ev["event_note"]
+                )
+    warnings.extend(enriched_notes)
+
     if margin is None:
         margin = 0.10
         warnings.append("평균 영업이익률 계산 불가 — 기본값 10% 사용")

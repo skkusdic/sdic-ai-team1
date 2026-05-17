@@ -540,6 +540,229 @@ def calculate_capm_discount_rate(
     }
 
 
+def _search_dart_disclosures(corp_code: str, year: int) -> list[dict]:
+    """
+    DART 공시검색 API로 해당 연도 유의미한 공시 목록 반환.
+    전체 공시를 가져와 클라이언트 사이드에서 보일러플레이트(임원 소유상황 등) 제외.
+    """
+    # 제외 키워드: 임원·주요주주 소유변동 등 분석 불필요한 반복 공시
+    _SKIP_KEYWORDS = ("임원", "주요주주", "소유상황", "소유주식", "소유변동")
+    # 포함 우선 키워드: 이 중 하나라도 포함되면 무조건 포함
+    _KEEP_KEYWORDS = (
+        "주요사항", "합병", "분할", "영업양수", "영업양도",
+        "유상증자", "무상증자", "전환사채", "신주인수권",
+        "자기주식", "최대주주", "소송", "손상", "시설투자",
+        "사업보고서", "반기보고서", "분기보고서",
+    )
+
+    bgn = f"{year}0101"
+    end = f"{year}1231"
+    results: list[dict] = []
+    try:
+        resp = requests.get(
+            "https://opendart.fss.or.kr/api/list.json",
+            params={
+                "crtfc_key":  DART_API_KEY,
+                "corp_code":  corp_code,
+                "bgn_de":     bgn,
+                "end_de":     end,
+                "page_count": 40,
+            },
+            timeout=10,
+        )
+        data = resp.json()
+        if data.get("status") == "000":
+            for item in data.get("list", []):
+                name = item.get("report_nm", "")
+                # 우선 포함 키워드 확인
+                if any(k in name for k in _KEEP_KEYWORDS):
+                    results.append({
+                        "date":        item.get("rcept_dt", ""),
+                        "report_name": name,
+                        "source":      "OpenDART",
+                    })
+                elif not any(k in name for k in _SKIP_KEYWORDS):
+                    # 스킵 키워드도 없고 포함 키워드도 없으면 포함 (기타 유의미 공시)
+                    results.append({
+                        "date":        item.get("rcept_dt", ""),
+                        "report_name": name,
+                        "source":      "OpenDART",
+                    })
+    except Exception:
+        pass
+    return results
+
+
+def _search_naver_news(company_name: str, year: int, max_results: int = 8) -> list[dict]:
+    """
+    Naver News Search API로 해당 연도 기업 이슈 뉴스 검색.
+    NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 없으면 빈 리스트 반환.
+    """
+    client_id     = os.environ.get("NAVER_CLIENT_ID")
+    client_secret = os.environ.get("NAVER_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return []
+
+    queries = [
+        f"{company_name} {year} 영업이익 실적",
+        f"{company_name} {year} 구조조정 일회성 손실",
+    ]
+    seen: set[str] = set()
+    news: list[dict] = []
+
+    for q in queries:
+        try:
+            resp = requests.get(
+                "https://openapi.naver.com/v1/search/news.json",
+                headers={
+                    "X-Naver-Client-Id":     client_id,
+                    "X-Naver-Client-Secret": client_secret,
+                },
+                params={"query": q, "display": 5, "sort": "date"},
+                timeout=10,
+            )
+            for item in resp.json().get("items", []):
+                # HTML 태그 제거 (BeautifulSoup 재사용)
+                title = BeautifulSoup(item.get("title", ""), "html.parser").get_text()
+                if not title or title in seen:
+                    continue
+                # 해당 연도 기사만 수집
+                if str(year) not in item.get("pubDate", ""):
+                    continue
+                seen.add(title)
+                news.append({
+                    "date":   item.get("pubDate", ""),
+                    "title":  title,
+                    "link":   item.get("link", ""),
+                    "source": "Naver News",
+                })
+                if len(news) >= max_results:
+                    return news
+        except Exception:
+            pass
+
+    return news
+
+
+_DART_EVENT_TAG_MAP = {
+    "합병":         "합병/분할",
+    "분할":         "합병/분할",
+    "영업양수":     "영업양수도",
+    "영업양도":     "영업양수도",
+    "유상증자":     "유상증자",
+    "전환사채":     "전환사채/신주인수권",
+    "자기주식취득": "자기주식 취득/처분",   # '자기주식' 단독은 오탐 가능
+    "소송":         "소송/분쟁",
+    "손상차손":     "자산손상차손",          # '손상' 단독은 오탐 가능
+    "시설투자":     "대규모 시설투자",
+    "주요사항":     "주요사항보고서 제출",
+}
+
+
+def detect_company_events(company_name: str, corp_code: str, year: int) -> dict:
+    """
+    특정 연도의 실적 왜곡 가능 이벤트 탐색 (DART 공시 + Naver News).
+
+    반환값은 설명 노트용 보조 근거이며, DCF 수치에 자동 반영하지 말 것.
+
+    Returns:
+        {
+            "company_name": str, "corp_code": str, "year": int,
+            "event_tags":   list[str],          # DART 공시 기반 이벤트 분류
+            "dart_events":  list[dict],          # 공시 목록
+            "news_events":  list[dict],          # 뉴스 목록
+            "event_note":   str,                 # Claude 요약 (사실 기반)
+            "confidence":   "low"|"medium"|"high"
+        }
+    """
+    dart_events = _search_dart_disclosures(corp_code, year)
+    news_events = _search_naver_news(company_name, year)
+
+    # DART 공시 기반 이벤트 태그 추출
+    tags: set[str] = set()
+    for ev in dart_events:
+        for kw, tag in _DART_EVENT_TAG_MAP.items():
+            if kw in ev.get("report_name", ""):
+                tags.add(tag)
+
+    # Claude로 이벤트 요약 (사실 기반, 수치 추천 금지)
+    event_note = ""
+    if dart_events or news_events:
+        dart_text = "\n".join(
+            f"- [{e['date']}] {e['report_name']}" for e in dart_events[:8]
+        )
+        news_text = "\n".join(
+            f"- [{e['date']}] {e['title']}" for e in news_events[:5]
+        )
+        prompt = (
+            f"{company_name} {year}년 실적에 영향을 미쳤을 이벤트를 아래 목록에서 파악해주세요.\n\n"
+            f"[DART 공시]\n{dart_text or '없음'}\n\n"
+            f"[뉴스]\n{news_text or '없음'}\n\n"
+            "요청: 실적(매출·영업이익)에 영향을 미쳤을 만한 이벤트를 2~3문장으로 요약하세요. "
+            "결론·투자 의견·DCF 수치 변경 권고는 절대 쓰지 마세요. "
+            "공시·뉴스에 나타난 사실만 서술하고 출처를 함께 표기하세요. "
+            "마크다운 헤더(#)는 사용하지 마세요."
+        )
+        try:
+            event_note = ask(prompt, max_tokens=250).strip()
+        except Exception:
+            event_note = ""
+
+    # 신뢰도 판단
+    if len(dart_events) >= 3 or len(news_events) >= 4:
+        confidence = "high"
+    elif dart_events or len(news_events) >= 2:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    return {
+        "company_name": company_name,
+        "corp_code":    corp_code,
+        "year":         year,
+        "event_tags":   sorted(tags),
+        "dart_events":  dart_events,
+        "news_events":  news_events,
+        "event_note":   event_note,
+        "confidence":   confidence,
+    }
+
+
+def _find_anomaly_years(income_statement: dict) -> list[int]:
+    """
+    OPM 급락·급등 또는 매출 급변 연도를 이상치 후보로 반환.
+    detect_company_events 호출 대상 연도 선별에 사용.
+    """
+    years = sorted(income_statement.keys())
+    margins: dict[int, float] = {}
+    for yr in years:
+        rev = income_statement[yr].get("revenue")
+        op  = income_statement[yr].get("operating_profit")
+        if rev and rev > 0 and op is not None:
+            margins[yr] = op / rev
+
+    anomalies: set[int] = set()
+
+    # OPM 이상치: 중앙값 기준 ±10pp 초과 (최소 3개년 필요)
+    if len(margins) >= 3:
+        import statistics as _st
+        med = _st.median(margins.values())
+        for yr, m in margins.items():
+            if abs(m - med) > 0.10:
+                anomalies.add(yr)
+
+    # 매출 YoY 이상치: -10% 미만 또는 +40% 초과
+    for i in range(1, len(years)):
+        r0 = income_statement[years[i - 1]].get("revenue")
+        r1 = income_statement[years[i]].get("revenue")
+        if r0 and r1 and r0 > 0:
+            yoy = (r1 - r0) / r0
+            if yoy < -0.10 or yoy > 0.40:
+                anomalies.add(years[i])
+
+    return sorted(anomalies)
+
+
 def get_dcf_inputs(company_name: str) -> dict:
     """
     DCF 시뮬레이션용 DART 재무 데이터 수집.
@@ -717,6 +940,13 @@ def get_dcf_inputs(company_name: str) -> dict:
             "source_note":          "CAPM discount rate is a reference value only. Rf and ERP are fixed assumptions.",
         }
 
+        # ── 이상치 연도 이벤트 탐색 (최대 2개년, 설명 노트용) ────────────────
+        anomaly_years = _find_anomaly_years(income_statement)
+        company_events: dict[int, dict] = {}
+        for yr in anomaly_years[:2]:   # API 호출 최소화: 최대 2개년
+            print(f"[get_dcf_inputs] {yr}년 이벤트 탐색 중...")
+            company_events[yr] = detect_company_events(corp_name, corp_code, yr)
+
         return {
             "company_info": {
                 "corp_name":  corp_name,
@@ -729,6 +959,7 @@ def get_dcf_inputs(company_name: str) -> dict:
             "cash_flow":        cash_flow,
             "shares":           shares,
             "market_metrics":   market_metrics,
+            "company_events":   company_events,  # {year: detect_company_events 결과}
         }
 
     except Exception as e:
