@@ -27,6 +27,7 @@ st.set_page_config(page_title="AI 재무 컨설팅 어시스턴트", layout="wid
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 
 html, body, [class*="css"], .stApp {
     font-family: 'Noto Sans KR', sans-serif;
@@ -117,7 +118,7 @@ hr {
 .logo-row {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 8px;
 }
 
 .logo-divider {
@@ -159,6 +160,21 @@ hr {
 .kpi-card:hover {
     transform: translateY(-4px);
     box-shadow: 0 12px 32px rgba(46,125,50,0.15), 0 4px 10px rgba(0,0,0,0.08);
+}
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border: 1px solid #e8e8e8 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08) !important;
+    background: #ffffff !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+    min-height: 130px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    transform: translateY(-4px) !important;
+    box-shadow: 0 12px 32px rgba(46,125,50,0.15), 0 4px 10px rgba(0,0,0,0.08) !important;
 }
 .kpi-label {
     font-size: 14px;
@@ -204,9 +220,29 @@ hr {
 }
 [data-testid="stTabs"] button[aria-selected="true"] {
     color: #1b5e20 !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     background: #f1f8f1 !important;
     border-bottom: 3px solid #2e7d32 !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] p,
+[data-testid="stTabs"] button[aria-selected="true"] span,
+[data-testid="stTabs"] button[aria-selected="true"] div {
+    font-weight: 700 !important;
+    color: #1b5e20 !important;
+}
+
+[data-testid="stSpinner"],
+[data-testid="stSpinner"] > div,
+[data-testid="stSpinner"] > div > div {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    width: 100% !important;
+    gap: 10px !important;
+}
+[data-testid="stSpinner"] p {
+    text-align: center !important;
+    margin: 0 !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab-highlight"] {
     background-color: transparent !important;
@@ -230,6 +266,95 @@ hr {
 @keyframes spin {
     0%   { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+@keyframes headerFadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.header-logo {
+    animation: headerFadeIn 3.2s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+}
+.header-title {
+    animation: headerFadeIn 3.2s cubic-bezier(0.22, 1, 0.36, 1) 1.1s both;
+}
+
+/* 슬라이더 — 주황색 완전 제거, 초록 테마 적용 */
+[data-baseweb="slider"] [role="slider"],
+[data-testid="stSlider"] [role="slider"] {
+    background-color: #2e7d32 !important;
+    border-color: #2e7d32 !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+[data-baseweb="slider"] [role="slider"]:focus,
+[data-baseweb="slider"] [role="slider"]:focus-visible {
+    box-shadow: 0 0 0 4px rgba(46,125,50,0.25) !important;
+    outline: none !important;
+}
+[data-testid="stSliderTrackActive"],
+[data-testid="stSlider"] [data-testid="stSliderTrackActive"],
+[data-baseweb="slider"] [class*="TrackActive"],
+[data-baseweb="slider"] [class*="trackActive"] {
+    background: linear-gradient(90deg, #c8e6c9, #1b5e20) !important;
+}
+[data-baseweb="slider"] [class*="Track"]:not([class*="Active"]):not([class*="active"]) {
+    background: #e8f5e9 !important;
+}
+
+/* st.warning() 연한 연두색 */
+[data-testid="stAlert"]:has(svg[data-testid="stAlertDynamicIcon"]) {
+    background-color: #f1f8e9 !important;
+    border-color: #a5d6a7 !important;
+}
+div[data-testid="stAlert"] {
+    background-color: #f1f8e9 !important;
+    border-color: #a5d6a7 !important;
+}
+div[data-testid="stAlert"] svg {
+    fill: #2e7d32 !important;
+    color: #2e7d32 !important;
+}
+div[data-testid="stAlert"] p,
+div[data-testid="stAlert"] div {
+    color: #1b5e20 !important;
+}
+
+@keyframes sectionFadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes titleSlideIn {
+    from { opacity: 0; transform: translateX(-12px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+.analysis-section {
+    opacity: 0;
+    animation: sectionFadeUp 0.45s ease forwards;
+    padding: 24px 0 24px 16px;
+    border-left: 3px solid #c8e6c9;
+}
+.analysis-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #2e7d32;
+    letter-spacing: -0.01em;
+    margin-bottom: 12px;
+    opacity: 0;
+    animation: titleSlideIn 0.35s ease forwards;
+}
+.analysis-section-body {
+    font-size: 15px;
+    line-height: 1.95;
+    color: #333333;
+    margin: 0;
+    word-break: keep-all;
+}
+.analysis-divider {
+    height: 1px;
+    background: #e8e8e8;
+    margin: 4px 0;
+    border: none;
 }
 .spinner-icon {
     display: inline-block;
@@ -285,6 +410,29 @@ st.markdown("""
 
     setTimeout(init, 900);
 })();
+
+// ── 슬라이더 thumb 색상 동적 변경 (연두 → 진초록) ──
+(function() {
+    function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
+    function thumbColor(ratio) {
+        return 'rgb('+lerp(200,27,ratio)+','+lerp(230,94,ratio)+','+lerp(201,32,ratio)+')';
+    }
+    function updateThumbs() {
+        document.querySelectorAll('[role="slider"]').forEach(function(thumb) {
+            var min = parseFloat(thumb.getAttribute('aria-valuemin') || 0);
+            var max = parseFloat(thumb.getAttribute('aria-valuemax') || 1);
+            var val = parseFloat(thumb.getAttribute('aria-valuenow') || min);
+            if (max === min) return;
+            var ratio = (val - min) / (max - min);
+            var c = thumbColor(ratio);
+            thumb.style.setProperty('background-color', c, 'important');
+            thumb.style.setProperty('border-color', c, 'important');
+        });
+    }
+    // 초기 실행 + 200ms마다 polling (Streamlit 재렌더 대응)
+    setTimeout(updateThumbs, 600);
+    setInterval(updateThumbs, 200);
+})();
 </script>
 """, unsafe_allow_html=True)
 
@@ -329,52 +477,229 @@ def kpi_card(label, value, delta=None):
         f'</div>'
     )
 
-# ── 헤더: 타이틀 + 로고 ───────────────────────────────────
-col_title, col_logo = st.columns([5, 1])
-with col_title:
-    st.markdown(
-        '<h1 style="opacity:1; filter:none; font-size:3.2rem; font-weight:500; margin-bottom:0;">'
-        'AI 재무 컨설팅 어시스턴트</h1>',
-        unsafe_allow_html=True,
+# ── 로고 준비 ─────────────────────────────────────────────
+skku_path = os.path.join(os.path.dirname(__file__), "skku.png")
+sdic_path  = os.path.join(os.path.dirname(__file__), "skku_logo.png")
+
+def img_to_base64(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+def img_to_base64_transparent(path, threshold=235):
+    """흰색/밝은 배경 픽셀을 투명하게 처리해서 base64 반환."""
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(path).convert("RGBA")
+        pixels = img.getdata()
+        new_pixels = []
+        for r, g, b, a in pixels:
+            if r >= threshold and g >= threshold and b >= threshold:
+                new_pixels.append((r, g, b, 0))
+            else:
+                new_pixels.append((r, g, b, a))
+        img.putdata(new_pixels)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return img_to_base64(path)
+
+_skku_b64 = img_to_base64_transparent(skku_path) if os.path.exists(skku_path) else None
+_sdic_b64 = img_to_base64_transparent(sdic_path) if os.path.exists(sdic_path) else None
+
+_logo_center_html = ""
+if _skku_b64 and _sdic_b64:
+    _logo_center_html = (
+        f'<div class="logo-row header-logo" style="justify-content:center; margin-bottom:28px;">'
+        f'<img src="data:image/png;base64,{_skku_b64}" style="height:88px; width:auto; object-fit:contain;">'
+        f'<div class="logo-divider" style="height:72px;"></div>'
+        f'<img src="data:image/png;base64,{_sdic_b64}" style="height:88px; width:auto; object-fit:contain;">'
+        f'</div>'
     )
-with col_logo:
-    skku_path = os.path.join(os.path.dirname(__file__), "skku.png")
-    sdic_path  = os.path.join(os.path.dirname(__file__), "skku_logo.png")
+elif _sdic_b64:
+    _logo_center_html = (
+        f'<div class="header-logo" style="display:flex; justify-content:center; margin-bottom:28px;">'
+        f'<img src="data:image/png;base64,{_sdic_b64}" style="height:88px; width:auto; object-fit:contain;">'
+        f'</div>'
+    )
 
-    def img_to_base64(path):
-        with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode()
+_logo_right_html = ""
+if _skku_b64 and _sdic_b64:
+    _logo_right_html = (
+        f'<div class="logo-row header-logo" style="justify-content:flex-end;">'
+        f'<img src="data:image/png;base64,{_skku_b64}" style="height:88px; width:auto; object-fit:contain;">'
+        f'<div class="logo-divider" style="height:72px;"></div>'
+        f'<img src="data:image/png;base64,{_sdic_b64}" style="height:88px; width:auto; object-fit:contain;">'
+        f'</div>'
+    )
+elif _sdic_b64:
+    _logo_right_html = (
+        f'<div class="header-logo" style="display:flex; justify-content:flex-end;">'
+        f'<img src="data:image/png;base64,{_sdic_b64}" style="height:88px; width:auto; object-fit:contain;">'
+        f'</div>'
+    )
 
-    if os.path.exists(skku_path) and os.path.exists(sdic_path):
-        skku_b64 = img_to_base64(skku_path)
-        sdic_b64  = img_to_base64(sdic_path)
-        st.markdown(f"""
-        <div class="logo-row" style="justify-content:flex-end;">
-            <img src="data:image/png;base64,{skku_b64}" style="height:88px; width:auto; object-fit:contain;">
-            <div class="logo-divider" style="height:72px;"></div>
-            <img src="data:image/png;base64,{sdic_b64}" style="height:88px; width:auto; object-fit:contain;">
-        </div>""", unsafe_allow_html=True)
-    elif os.path.exists(sdic_path):
-        sdic_b64 = img_to_base64(sdic_path)
-        st.markdown(f"""
-        <div style="display:flex; justify-content:flex-end;">
-            <img src="data:image/png;base64,{sdic_b64}" style="height:88px; width:auto; object-fit:contain;">
-        </div>""", unsafe_allow_html=True)
+# ── 헤더: 시작화면 vs 결과화면 분기 ─────────────────────────
+_is_startup = st.session_state.final_state is None
 
-st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-st.markdown("---")
-st.markdown('</div>', unsafe_allow_html=True)
+if _is_startup:
+    # 배경 그라데이션 + 시작화면 스타일 주입
+    st.markdown("""
+<style>
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(170deg, #c2ccaa 0%, #2d4535 100%) !important;
+}
+/* 사이드바: 버튼과 동일한 반투명 회색 */
+[data-testid="stSidebar"] {
+    background-color: rgba(60,60,60,0.45) !important;
+    border-right: 1px solid rgba(60,60,60,0.2) !important;
+    border-left: 3px solid rgba(10,61,20,0.7) !important;
+}
+/* 로고 배경 제거: stMain 내 모든 중간 wrapper 투명 처리 */
+[data-testid="stMain"] * {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+/* 시작 화면 레이블 텍스트 검정 */
+[data-testid="stMain"] p,
+[data-testid="stMain"] label,
+[data-testid="stMain"] .stMarkdown p {
+    color: #1a1a1a !important;
+}
+/* 검색창: 진한 반투명 회색 + 딥그린 두꺼운 테두리 */
+[data-testid="stMain"] [data-baseweb="input"],
+[data-testid="stMain"] [data-baseweb="base-input"] {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+[data-testid="stMain"] .stTextInput > div > div > input {
+    background: rgba(60,60,60,0.45) !important;
+    border: 2.5px solid #0a3d14 !important;
+    color: #1a1a1a !important;
+}
+[data-testid="stMain"] .stTextInput > div > div > input::placeholder {
+    color: rgba(0,0,0,0.55) !important;
+}
+[data-testid="stMain"] .stTextInput > div > div > input:focus {
+    border-color: #0a3d14 !important;
+    box-shadow: 0 0 0 3px rgba(10,61,20,0.3) !important;
+}
+/* 분석 시작 버튼: 진한 반투명 회색 + 딥그린 두꺼운 테두리 */
+[data-testid="stMain"] .stButton > button {
+    background-color: rgba(60,60,60,0.45) !important;
+    border: 2.5px solid #0a3d14 !important;
+    color: #1a1a1a !important;
+}
+[data-testid="stMain"] .stButton > button:hover {
+    background-color: rgba(60,60,60,0.62) !important;
+    border-color: #0a3d14 !important;
+}
+
+/* ── 순차 페이드인: (레이블+검색창 동시) → 버튼 ── */
+[data-testid="stMain"] .stMarkdown p {
+    animation: headerFadeIn 2.8s cubic-bezier(0.22, 1, 0.36, 1) 2.0s both;
+}
+[data-testid="stMain"] .stTextInput {
+    animation: headerFadeIn 2.8s cubic-bezier(0.22, 1, 0.36, 1) 2.0s both;
+}
+[data-testid="stMain"] .stButton {
+    animation: headerFadeIn 2.8s cubic-bezier(0.22, 1, 0.36, 1) 3.0s both;
+}
+</style>
+""", unsafe_allow_html=True)
+    # 로고 + 타이틀 중앙 배치
+    st.markdown(f"""
+<div style="display:flex; flex-direction:column; align-items:center; justify-content:center;
+            min-height:44vh; padding-top:32px; text-align:center;">
+    {_logo_center_html}
+    <h1 class="header-title"
+        style="font-size:5.04rem; font-weight:500; margin:0; color:#ffffff;
+               font-family:'Pretendard', 'Noto Sans KR', sans-serif;
+               text-shadow:0 2px 16px rgba(0,0,0,0.18);">
+        AI 재무 컨설팅 어시스턴트
+    </h1>
+</div>
+""", unsafe_allow_html=True)
+else:
+    # 결과 화면: 기존 좌/우 레이아웃 + 흰 배경 명시
+    st.markdown("""
+<style>
+[data-testid="stAppViewContainer"] {
+    background: #ffffff !important;
+}
+[data-testid="stSidebar"] {
+    background-color: #f2f2f2 !important;
+    border-right: 1px solid #eeeeee !important;
+    border-left: 3px solid #2e7d32 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+    col_title, col_logo = st.columns([5, 1])
+    with col_title:
+        st.markdown(
+            '<h1 class="header-title" style="font-size:2.24rem; font-weight:500; margin-bottom:0;'
+            'font-family:Pretendard,\'Noto Sans KR\',sans-serif;">'
+            'AI 재무 컨설팅 어시스턴트</h1>',
+            unsafe_allow_html=True,
+        )
+    with col_logo:
+        st.markdown(_logo_right_html, unsafe_allow_html=True)
+    st.markdown('<div class="fade-section">', unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ── 사이드바 ──────────────────────────────────────────────
 ICON = {"대기": "○", "실행 중": "◌", "완료": "●", "오류": "✗"}
 COLOR = {"대기": "#aaaaaa", "실행 중": "#f59e0b", "완료": "#2e7d32", "오류": "#dc2626"}
 
 with st.sidebar:
-    st.markdown("#### 팀 정보")
-    st.markdown("**SDIC AI Team 1**")
-    st.markdown("분석 기업: **에이피알**")
-    st.markdown("진행 주차: **4주차**")
-    st.markdown("---")
+    st.markdown(
+        "<div style='margin:0; padding:0;'>"
+        "<span style='font-size:1.5em; font-weight:700; display:block; margin-bottom:0; line-height:1.3;'>SDIC AI Team 1</span>"
+        "<p style='font-size:13px; color:#555; line-height:2.0; margin-top:0; margin-bottom:20px;'>"
+        "Pipeline | 이수빈<br>"
+        "Data | 김나은<br>"
+        "UI | 권지연<br>"
+        "Report | 성한동"
+        "</p></div>",
+        unsafe_allow_html=True,
+    )
+    _dart_path   = os.path.join(os.path.dirname(__file__), "dart_logo.png")
+    _claude_path = os.path.join(os.path.dirname(__file__), "claude_logo.png")
+    _dart_b64   = img_to_base64_transparent(_dart_path)   if os.path.exists(_dart_path)   else None
+    _claude_b64 = img_to_base64_transparent(_claude_path) if os.path.exists(_claude_path) else None
+    _logo_html = ""
+    if _dart_b64:
+        _logo_html += (
+            f'<div style="overflow:hidden; display:inline-flex; align-items:center;">'
+            f'<img src="data:image/png;base64,{_dart_b64}" style="'
+            f'height:66px; width:auto; object-fit:contain;'
+            f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;'
+            f'clip-path:inset(6px);'
+            f'">'
+            f'</div>'
+        )
+    if _claude_b64:
+        _logo_html += (
+            f'<img src="data:image/png;base64,{_claude_b64}" style="'
+            f'height:28px; width:auto; object-fit:contain;'
+            f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;'
+            f'">'
+        )
+    st.markdown(f"""
+<div style="margin:0; padding:0; line-height:1.4;">
+    <div style="font-size:13px; color:#888; margin-bottom:0;">Powered by</div>
+    <div style="font-size:13px; color:#888; font-weight:700; margin-top:0;">DART API · Claude AI</div>
+    <div style="display:flex; gap:12px; margin-top:2px; margin-bottom:0; align-items:center; margin-left:-8px;">
+        {_logo_html}
+    </div>
+</div>
+<div style="height:1px; background-color:#aaaaaa; margin:16px 0 0 0; border-radius:1px;"></div>
+""", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
     st.markdown("#### 에이전트 상태")
     for key, label in [("data", "Data Agent"), ("analysis", "Analysis Agent"), ("report", "Report Agent")]:
         s = st.session_state.agent_status[key]
@@ -389,7 +714,7 @@ with st.sidebar:
             f'</div>',
             unsafe_allow_html=True,
         )
-    st.markdown("---")
+    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
     st.markdown("#### SQLite 캐시")
     if os.path.exists(DB_PATH):
         with sqlite3.connect(DB_PATH) as _conn:
@@ -406,7 +731,6 @@ with st.sidebar:
             st.markdown("<span style='font-size:12px; color:#aaa;'>저장된 데이터 없음</span>", unsafe_allow_html=True)
     else:
         st.markdown("<span style='font-size:12px; color:#aaa;'>DB 없음</span>", unsafe_allow_html=True)
-    st.markdown("---")
     st.markdown("#### 데이터 소스")
     _data_source = (
         st.session_state.final_state.get("data_source", "")
@@ -428,13 +752,13 @@ with st.sidebar:
             "<span style='font-size:12px; color:#aaa;'>분석 전</span>",
             unsafe_allow_html=True,
         )
-    st.markdown("---")
-    st.markdown("<span style='font-size:12px; color:#888;'>DART API · Claude AI</span>", unsafe_allow_html=True)
 
 # ── 입력 영역 ─────────────────────────────────────────────
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-st.markdown("<p style='font-size:14px; color:#555; margin-bottom:6px;'>분석할 기업명을 입력하세요</p>", unsafe_allow_html=True)
-company_input = st.text_input("", placeholder="예: 에이피알", label_visibility="collapsed")
+_inp_l, _inp_c, _inp_r = st.columns([1, 2, 1])
+with _inp_c:
+    st.markdown("<p style='font-size:14px; color:#555; margin-bottom:6px; text-align:center;'>분석할 기업명을 입력하세요</p>", unsafe_allow_html=True)
+    company_input = st.text_input("", placeholder="예: 에이피알", label_visibility="collapsed")
 st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
@@ -451,16 +775,18 @@ if run:
         st.session_state.agent_status = {"data": "실행 중", "analysis": "실행 중", "report": "실행 중"}
         st.session_state.final_state = None
 
-        with st.spinner(f"{company_input} 분석 중..."):
-            graph_state = pipeline.invoke({
-                "request": f"{company_input} 재무 분석해줘",
-                "company": company_input.strip(),
-                "next_agent": "",
-                "financials": {},
-                "analysis": "",
-                "result": "",
-                "pdf_path": "",
-            })
+        _sp_l, _sp_c, _sp_r = st.columns([2, 1, 2])
+        with _sp_c:
+            with st.spinner("분석 중"):
+                graph_state = pipeline.invoke({
+                    "request": f"{company_input} 재무 분석해줘",
+                    "company": company_input.strip(),
+                    "next_agent": "",
+                    "financials": {},
+                    "analysis": "",
+                    "result": "",
+                    "pdf_path": "",
+                })
 
         st.session_state.final_state = graph_state
         st.session_state.company = company_input.strip()
@@ -540,7 +866,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
         ).hide(axis="index")
 
         # ── 탭 ──
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["재무 데이터", "Claude 분석", "AI 질문 (RAG + Text2SQL)", "기업 비교", "DCF 밸류에이션"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["재무 데이터", "Claude 분석", "AI 질문", "기업 비교", "DCF 밸류에이션"])
 
         with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
@@ -711,9 +1037,96 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab2:
+            import re as _re
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.subheader(f"{company_name} 재무 분석")
-            st.write(analysis if analysis else "분석 결과가 없습니다.")
+            st.markdown(
+                f"<p style='font-size:1.875rem; font-weight:700; color:#1a1a1a;"
+                f"letter-spacing:-0.02em; margin-bottom:24px;'>"
+                f"{company_name} 사업 분석 보고서</p>",
+                unsafe_allow_html=True,
+            )
+
+            if not analysis:
+                st.info("분석 결과가 없습니다.")
+            else:
+                def _sentences_html(text):
+                    sents = _re.split(r'(?<=[.?!])\s+', text.strip())
+                    return '<br>'.join(s.strip() for s in sents if s.strip())
+
+                def _parse_sections(text):
+                    # 마크다운 헤더 제거
+                    t = _re.sub(r'(?m)^#+\s+.+\n?', '', text.strip()).strip()
+                    # ** / * bold 마커 제거
+                    t = _re.sub(r'\*+([^*\n]+)\*+', r'\1', t)
+
+                    # re.split 으로 "줄 시작 숫자." 패턴에서 분리
+                    # capturing group 으로 번호 유지
+                    raw = _re.split(r'(?m)^(\d+)\.\s+', t)
+                    # raw = ['앞텍스트', '1', '내용1', '2', '내용2', ...]
+                    sections = []
+                    i = 1
+                    while i + 1 < len(raw):
+                        num     = raw[i].strip()
+                        content = raw[i + 1].strip()
+                        # 첫 줄이 제목, 나머지가 본문
+                        lines = content.split('\n', 1)
+                        first = lines[0].strip()
+                        rest  = lines[1].strip() if len(lines) > 1 else ''
+                        # "제목: 본문" 형태 분리
+                        if ':' in first:
+                            ci = first.index(':')
+                            cand = first[:ci].strip()
+                            if len(cand) <= 35:
+                                title = cand
+                                body  = (first[ci+1:].strip() + ' ' + rest).strip()
+                            else:
+                                title, body = first, rest
+                        else:
+                            title, body = first, rest
+                        sections.append((num, title, body))
+                        i += 2
+                    return sections
+
+                _sections = _parse_sections(analysis)
+
+                if _sections:
+                    for _i, (_num, _title, _body) in enumerate(_sections):
+                        _td  = f"{_i * 0.13:.2f}s"
+                        _ttd = f"{_i * 0.13 + 0.07:.2f}s"
+                        if _i > 0:
+                            st.markdown(
+                                '<div style="height:1px;background:#e0e0e0;margin:0;"></div>',
+                                unsafe_allow_html=True,
+                            )
+                        st.markdown(f"""
+<div style="padding:24px 0 20px 16px; border-left:3px solid #c8e6c9;
+            animation:sectionFadeUp 0.4s ease {_td} both;">
+  <div style="font-size:1rem; font-weight:700; color:#2e7d32; margin-bottom:12px;
+              animation:titleSlideIn 0.35s ease {_ttd} both;">
+    {_num}. {_title}
+  </div>
+  <p style="font-size:15px; line-height:1.95; color:#333; margin:0; word-break:keep-all;">
+    {_sentences_html(_body)}
+  </p>
+</div>""", unsafe_allow_html=True)
+                else:
+                    # 번호 섹션이 없는 경우(fallback 분석) — 문단별로 구분
+                    _paras = [p.strip() for p in _re.split(r'\n{2,}', analysis.strip()) if p.strip()]
+                    for _pi, _para in enumerate(_paras):
+                        if _pi > 0:
+                            st.markdown(
+                                '<div style="height:1px;background:#e0e0e0;margin:0;"></div>',
+                                unsafe_allow_html=True,
+                            )
+                        st.markdown(
+                            f'<div style="padding:20px 0 16px 16px; border-left:3px solid #c8e6c9;">'
+                            f'<p style="font-size:15px;line-height:1.95;color:#333;margin:0;word-break:keep-all;">'
+                            f'{_sentences_html(_para)}</p></div>',
+                            unsafe_allow_html=True,
+                        )
+                # 디버그 expander (파싱 확인용)
+                with st.expander("🔍 원문 보기 (디버그)", expanded=False):
+                    st.code(analysis, language=None)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab3:
@@ -799,15 +1212,61 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
         with tab4:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.subheader("기업 비교")
-            st.markdown(f"**기준 기업:** {company_name}")
-
-            cmp_input = st.text_input(
-                "비교할 기업명 입력",
-                placeholder="예: 카카오, Samsung, LGdisplay",
-                key="cmp_company_input",
+            st.markdown(
+                "<p style='font-size:1.875rem; font-weight:700; color:#1a1a1a;"
+                "letter-spacing:-0.02em; margin-bottom:16px;'>기업 비교</p>",
+                unsafe_allow_html=True,
             )
-            cmp_btn = st.button("비교 조회", key="cmp_btn")
+            # ── 기업 선택 카드 레이아웃 ──
+            _card_style = (
+                "background:#ffffff; border:1px solid #e8e8e8; border-radius:12px;"
+                "padding:28px 32px; text-align:center;"
+                "box-shadow:0 6px 20px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);"
+            )
+            _col_l, _col_mid, _col_r = st.columns([5, 1, 5])
+            with _col_l:
+                with st.container(border=True):
+                    st.markdown(
+                        f'<div style="text-align:center; padding:12px 0 8px 0;">'
+                        f'<div style="font-size:13px; color:#999; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:14px;">비교 기준 기업</div>'
+                        f'<div style="font-size:1.6rem; font-weight:700; color:#1a1a1a; letter-spacing:-0.02em;">{company_name}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+            with _col_mid:
+                st.markdown(
+                    '<div style="display:flex; flex-direction:column; align-items:center; margin-bottom:-32px;">'
+                    '  <div style="padding-top:65px; width:100%;">'
+                    '    <div style="height:2px; background:#e0e0e0;"></div>'
+                    '  </div>'
+                    '  <div style="width:2px; flex:1; min-height:80px; background:#e0e0e0;"></div>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            with _col_r:
+                with st.container(border=True):
+                    st.markdown(
+                        '<div style="font-size:13px; color:#999; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:12px; padding-top:12px; text-align:center;">비교 대상 기업</div>',
+                        unsafe_allow_html=True,
+                    )
+                    _ri_l, _ri_c, _ri_r = st.columns([1, 2, 1])
+                    with _ri_c:
+                        cmp_input = st.text_input(
+                            "",
+                            placeholder="비교할 기업명을 입력해주세요",
+                            key="cmp_company_input",
+                            label_visibility="collapsed",
+                        )
+
+            _btn_l, _btn_c, _btn_r = st.columns([2, 1, 2])
+            with _btn_c:
+                st.markdown(
+                    '<div style="display:flex; justify-content:center; margin-top:-16px; margin-bottom:4px;">'
+                    '<div style="width:2px; height:28px; background:#e0e0e0;"></div>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+                cmp_btn = st.button("비교 조회", key="cmp_btn", use_container_width=True)
 
             if cmp_btn and cmp_input.strip():
                 with st.spinner(f"{cmp_input} 데이터 조회 중..."):
@@ -832,49 +1291,57 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 if not common_years:
                     st.warning("두 기업 간 공통 연도 데이터가 없습니다.")
                 else:
-                    st.markdown("---")
-                    st.markdown(f"### {company_name} vs {cmp_name} — 재무 비교")
+                    st.markdown(
+                        '<div style="height:1px; background:linear-gradient(90deg,#2e7d32,#81c784,#2e7d32); margin:32px 0 40px 0; border-radius:1px;"></div>',
+                        unsafe_allow_html=True,
+                    )
 
-                    # ── 비교 표 ──
-                    cmp_rows = []
-                    for year in common_years:
-                        a = fin_norm[year]
-                        b = cmp_norm[year]
-                        cmp_rows.append({
-                            "연도":                        year,
-                            f"{company_name} 매출액":      a.get("매출액", 0),
-                            f"{cmp_name} 매출액":          b.get("매출액", 0),
-                            f"{company_name} 영업이익":    a.get("영업이익", 0),
-                            f"{cmp_name} 영업이익":        b.get("영업이익", 0),
-                            f"{company_name} 순이익":      a.get("순이익", 0),
-                            f"{cmp_name} 순이익":          b.get("순이익", 0),
-                        })
-                    cmp_df = pd.DataFrame(cmp_rows)
-
-                    fmt_int = "{:,.0f}".format
-                    fmt_cols = [c for c in cmp_df.columns if c != "연도"]
-                    cmp_styled = cmp_df.style.format({c: fmt_int for c in fmt_cols}).set_properties(
-                        **{"text-align": "center"}
-                    ).set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
-                    st.dataframe(cmp_styled, use_container_width=True)
+                    # ── 지표별 카드 3개 ──
+                    _fmt = "{:,.0f}".format
+                    _metrics = ["매출액", "영업이익", "순이익"]
+                    _mc1, _mc2, _mc3 = st.columns(3)
+                    for _col, _metric in zip([_mc1, _mc2, _mc3], _metrics):
+                        _rows = []
+                        for _y in common_years:
+                            _rows.append({
+                                "연도":        _y,
+                                company_name: fin_norm[_y].get(_metric, 0),
+                                cmp_name:     cmp_norm[_y].get(_metric, 0),
+                            })
+                        _mdf = pd.DataFrame(_rows)
+                        _mstyled = (
+                            _mdf.style
+                            .format({company_name: _fmt, cmp_name: _fmt})
+                            .set_properties(**{"text-align": "center"})
+                            .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
+                            .hide(axis="index")
+                        )
+                        with _col:
+                            with st.container(border=True):
+                                st.markdown(
+                                    f'<div style="font-size:14px; color:#999; letter-spacing:0.06em;'
+                                    f'text-transform:uppercase; margin-bottom:12px; font-weight:500; text-align:center;">'
+                                    f'{_metric} (백만원)</div>',
+                                    unsafe_allow_html=True,
+                                )
+                                st.dataframe(_mstyled, use_container_width=True, hide_index=True)
 
                     # ── 그룹 막대 차트 ──
-                    colors_a = {"매출액": "#1b5e20", "영업이익": "#4caf50", "순이익": "#aed581"}
-                    colors_b = {"매출액": "#0d47a1", "영업이익": "#1976d2", "순이익": "#64b5f6"}
-
                     for metric in ["매출액", "영업이익", "순이익"]:
                         fig_cmp = go.Figure([
                             go.Bar(
                                 name=company_name,
                                 x=common_years,
                                 y=[fin_norm[y].get(metric, 0) for y in common_years],
-                                marker_color=colors_a[metric],
+                                marker_color="#1b5e20",
+                                width=0.2,
                             ),
                             go.Bar(
                                 name=cmp_name,
                                 x=common_years,
                                 y=[cmp_norm[y].get(metric, 0) for y in common_years],
-                                marker_color=colors_b[metric],
+                                marker_color="#aed581",
+                                width=0.2,
                             ),
                         ])
                         fig_cmp.update_layout(
@@ -890,7 +1357,12 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab5:
-            st.subheader("DCF 밸류에이션")
+            st.markdown('<div class="fade-section">', unsafe_allow_html=True)
+            st.markdown(
+                "<p style='font-size:1.875rem; font-weight:700; color:#1a1a1a;"
+                "letter-spacing:-0.02em; margin-bottom:16px;'>DCF 밸류에이션</p>",
+                unsafe_allow_html=True,
+            )
             company_name = st.session_state.get("company", "")
             if not company_name:
                 st.info("왼쪽 사이드바에서 기업명을 입력하고 분석을 시작해주세요.")
@@ -903,25 +1375,28 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 else:
                     assumptions = build_default_assumptions(dcf_inputs)
 
+                    # ── 슬라이더: 좌우 여백 추가 ──
                     st.markdown("### 가정 조정")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        g = st.slider("매출 성장률", 0.0, 0.3,
-                                      float(assumptions["revenue_growth_rate"]), 0.01,
-                                      format="%.0f%%", key="dcf_g")
-                        margin = st.slider("영업이익률", 0.0, 0.5,
-                                           float(assumptions["operating_margin"]), 0.01,
-                                           format="%.0f%%", key="dcf_m")
-                        wacc = st.slider("할인율 (WACC)", 0.05, 0.2,
-                                         float(assumptions["discount_rate"]), 0.005,
-                                         format="%.1f%%", key="dcf_w")
-                    with col2:
-                        tgr = st.slider("영구성장률", 0.0, 0.05,
-                                        float(assumptions["terminal_growth_rate"]), 0.005,
-                                        format="%.1f%%", key="dcf_tgr")
-                        tax = st.slider("법인세율", 0.1, 0.35,
-                                        float(assumptions["tax_rate"]), 0.01,
-                                        format="%.0f%%", key="dcf_tax")
+                    _sl, _sc, _sr = st.columns([1, 6, 1])
+                    with _sc:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            g = st.slider("매출 성장률", 0.0, 0.3,
+                                          float(assumptions["revenue_growth_rate"]), 0.01,
+                                          format="%.0f%%", key="dcf_g")
+                            margin = st.slider("영업이익률", 0.0, 0.5,
+                                               float(assumptions["operating_margin"]), 0.01,
+                                               format="%.0f%%", key="dcf_m")
+                            wacc = st.slider("할인율 (WACC)", 0.05, 0.2,
+                                             float(assumptions["discount_rate"]), 0.005,
+                                             format="%.1f%%", key="dcf_w")
+                        with col2:
+                            tgr = st.slider("영구성장률", 0.0, 0.05,
+                                            float(assumptions["terminal_growth_rate"]), 0.005,
+                                            format="%.1f%%", key="dcf_tgr")
+                            tax = st.slider("법인세율", 0.1, 0.35,
+                                            float(assumptions["tax_rate"]), 0.01,
+                                            format="%.0f%%", key="dcf_tax")
 
                     assumptions.update({
                         "revenue_growth_rate": g,
@@ -937,27 +1412,58 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         st.error(result["error"])
                     else:
                         val = result["valuation"]
-                        c1, c2, c3 = st.columns(3)
-                        c1.metric("Enterprise Value", f"{val['enterprise_value']:,.0f}억원")
-                        c2.metric("Equity Value", f"{val['equity_value']:,.0f}억원")
                         vps = val.get("value_per_share")
-                        c3.metric("주당 가치", f"{vps:,}원" if vps else "N/A")
 
+                        # ── DCF KPI 카드 3개 ──
+                        def _dcf_card(label, value):
+                            return (
+                                f'<div style="background:#ffffff; border:1px solid #e8e8e8; border-radius:12px;'
+                                f'padding:36px 20px; text-align:center; margin-bottom:12px;'
+                                f'box-shadow:0 6px 20px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);'
+                                f'transition:transform 0.2s ease, box-shadow 0.2s ease; cursor:default;">'
+                                f'<div style="font-size:13px; color:#999; letter-spacing:0.06em;'
+                                f'text-transform:uppercase; margin-bottom:14px;">{label}</div>'
+                                f'<div style="font-size:26px; font-weight:600; color:#1a1a1a;'
+                                f'letter-spacing:-0.02em; white-space:nowrap;">{value}</div>'
+                                f'</div>'
+                            )
+                        st.markdown('<div style="margin-top:28px;"></div>', unsafe_allow_html=True)
+                        _, _dv1, _dv2, _dv3, _ = st.columns([1, 3, 3, 3, 1])
+                        with _dv1:
+                            st.markdown(_dcf_card("Enterprise Value", f"{val['enterprise_value']:,.0f}억원"), unsafe_allow_html=True)
+                        with _dv2:
+                            st.markdown(_dcf_card("Equity Value", f"{val['equity_value']:,.0f}억원"), unsafe_allow_html=True)
+                        with _dv3:
+                            st.markdown(_dcf_card("주당 가치", f"{vps:,}원" if vps else "N/A"), unsafe_allow_html=True)
+
+                        # ── 5개년 추정 표 ──
+                        st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
                         st.markdown("### 5개년 추정")
-                        import pandas as pd
                         proj = result["projection"]
-                        df = pd.DataFrame([
-                            {"연차": f"{yr}년차",
-                             "매출(억원)": p["revenue"],
-                             "FCF(억원)": p["fcf"],
+                        _proj_df = pd.DataFrame([
+                            {"연차":        f"{yr}년차",
+                             "매출(억원)":   p["revenue"],
+                             "FCF(억원)":    p["fcf"],
                              "PV_FCF(억원)": p["pv_fcf"]}
                             for yr, p in proj.items()
                         ])
-                        st.dataframe(df, use_container_width=True)
+                        _proj_styled = (
+                            _proj_df.style
+                            .format({"매출(억원)": "{:,.0f}", "FCF(억원)": "{:,.0f}", "PV_FCF(억원)": "{:,.0f}"})
+                            .set_properties(**{"text-align": "center"})
+                            .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
+                            .hide(axis="index")
+                        )
+                        _, _tbl, _ = st.columns([1, 4, 1])
+                        with _tbl:
+                            st.dataframe(_proj_styled, use_container_width=True, hide_index=True)
 
                         if result.get("warnings"):
-                            for w in result["warnings"]:
-                                st.warning(w)
+                            _, _wc, _ = st.columns([1, 4, 1])
+                            with _wc:
+                                for w in result["warnings"]:
+                                    st.warning(w)
+            st.markdown('</div>', unsafe_allow_html=True)
 
         # ── PDF 다운로드 (탭 밖) ──
         st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
