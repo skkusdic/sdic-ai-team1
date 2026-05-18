@@ -718,6 +718,10 @@ def detect_company_events(company_name: str, corp_code: str, year: int) -> dict:
     else:
         confidence = "low"
 
+    # 이벤트 근거를 찾지 못해도 통계 이상치 판단은 유효 — 보조 설명 미확인으로 표기
+    if not event_note:
+        event_note = f"{year}년 관련 공시·뉴스 근거를 확인하지 못했습니다. 통계 이상치(MAD 기반)로만 처리됩니다."
+
     return {
         "company_name": company_name,
         "corp_code":    corp_code,
@@ -942,10 +946,11 @@ def get_dcf_inputs(company_name: str) -> dict:
             "source_note":          "CAPM discount rate is a reference value only. Rf and ERP are fixed assumptions.",
         }
 
-        # ── 이상치 연도 이벤트 탐색 (최대 2개년, 설명 노트용) ────────────────
+        # ── 이상치 연도 이벤트 탐색 (전체 이상치 연도, 설명 노트용) ──────────────
+        # 이벤트 미발견 시에도 통계 이상치 판단은 유효 — 이벤트는 보조 설명일 뿐
         anomaly_years = _find_anomaly_years(income_statement)
         company_events: dict[int, dict] = {}
-        for yr in anomaly_years[:2]:   # API 호출 최소화: 최대 2개년
+        for yr in anomaly_years:
             print(f"[get_dcf_inputs] {yr}년 이벤트 탐색 중...")
             company_events[yr] = detect_company_events(corp_name, corp_code, yr)
 
