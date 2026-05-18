@@ -1035,16 +1035,24 @@ def get_dcf_inputs(company_name: str) -> dict:
                                  "무형자산취득", "무형자산의취득",
                                  "무형자산의 증가", "무형자산증가"])
 
+        # 비현금조정 합계 — D&A 직접 추출 실패 시 proxy로 활용
+        # 제조업 기준 비현금조정의 약 70%가 D&A (나머지: 주식보상·FX·충당금 등)
+        _noncash_adj = _match_account(latest_items, ("CF",),
+                                      ["당기순이익조정을 위한 가감",
+                                       "당기순손익조정을 위한 가감",
+                                       "비현금항목조정"])
+
         cash_flow = {
             base_year: {
                 "cash_flow_from_operations": _match_account(latest_items, ("CF",),
                                              ["영업활동현금흐름", "영업활동으로 인한 현금흐름", "영업활동으로인한현금흐름"]),
                 "capex_tangible":            _capex_t,
                 "capex_intangible":          _capex_i,
-                "depreciation":             _dep,
-                "amortization":             _amor,
-                "roua_depreciation":        _roua,
-                "depreciation_total":       _dep_total,  # CF 직접 추출값만. None이면 valuation에서 기본 ratio 사용
+                "depreciation":              _dep,
+                "amortization":              _amor,
+                "roua_depreciation":         _roua,
+                "depreciation_total":        _dep_total,   # CF 직접 추출 (우선)
+                "noncash_adjustments":       _noncash_adj, # D&A proxy (직접 추출 실패 시 fallback)
             }
         }
 

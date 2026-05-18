@@ -755,17 +755,42 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
 
     # ── 감가상각 ratio ───────────────────────────────────────────────────────
     dep = cf_latest.get("depreciation_total") or cf_latest.get("depreciation")
+    dep_source = "cf_direct"
     if dep is not None and latest_revenue:
         dep_ratio = dep / latest_revenue
     else:
-        dep_ratio = 0.02
-        warnings.append(
-            "감가상각비 자동 추출 실패: DART 현금흐름표에서 직접 분리된 항목이 없습니다. "
-            "유형자산 장부가액 변동을 이용한 BS 역산은 M&A·자산처분·환율효과 등으로 "
-            "왜곡될 수 있어 사용하지 않았습니다. "
-            "현재 DCF에는 임시 가정값(매출 대비 2%)이 적용되었습니다. "
-            "실제 감가상각비를 아는 경우 UI에서 직접 수정하세요."
-        )
+        # Fallback 1: 비현금조정 합계 × 0.70 (제조업 D&A 비중 근사)
+        noncash_adj = cf_latest.get("noncash_adjustments")
+        if noncash_adj and noncash_adj > 0 and latest_revenue:
+            dep = round(noncash_adj * 0.70)
+            dep_ratio = dep / latest_revenue
+            dep_source = "noncash_adj_proxy"
+            warnings.append(
+                f"D&A 직접 추출 실패 → 비현금조정 합계({noncash_adj:,.0f}억)의 70%를 "
+                f"D&A 추정값({dep:,.0f}억)으로 사용합니다 (제조업 기준 근사). "
+                "실제 사업보고서의 감가상각비와 차이가 있을 수 있습니다."
+            )
+        else:
+            dep_ratio = 0.02
+            dep_source = "default_2pct"
+            warnings.append(
+                "D&A 직접 추출 실패 + 비현금조정 데이터 없음: "
+                "임시 가정값(매출 대비 2%)을 사용합니다. "
+                "실제 감가상각비를 아는 경우 UI에서 직접 수정하세요."
+            )
+
+    # ── CAPEX 과다 투자 감지 (성장 CAPEX 주의 경고) ──────────────────────────
+    if dep is not None and capex_t is not None and latest_revenue:
+        total_capex = (capex_t or 0) + (capex_i or 0)
+        if total_capex > dep * 2.5:
+            growth_capex_est = total_capex - dep
+            warnings.append(
+                f"CAPEX({total_capex:,.0f}억)이 추정 D&A({dep:,.0f}억)의 "
+                f"{total_capex/dep:.1f}배 — 성장 투자 집중 구간으로 판단됩니다. "
+                f"성장 CAPEX 추정({growth_capex_est:,.0f}억)은 미래 수익 창출을 위한 것이나, "
+                f"현재 DCF는 전체 CAPEX를 비용으로 처리하므로 FCF가 과소 계산될 수 있습니다. "
+                f"FCF = CFO - CAPEX 방식의 현재 결과는 보수적 하한선으로 해석하세요."
+            )
 
     # ── 순차입금 ─────────────────────────────────────────────────────────
     bs_latest  = bs.get(base_year, {})
@@ -835,7 +860,12 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
         "capm_discount_rate":       capm_discount_rate,
         "full_wacc":                full_wacc_result,
         "discount_rate_source":     dr_source,
-        "terminal_growth_rate":     0.015,
+        "terminal_growth_rate":     {
+            "high_growth_fade_down":        0.025,
+            "moderate_growth_convergence":  0.020,
+            "low_growth_stable":            0.015,
+            "negative_growth_recovery":     0.010,
+        }.get(growth_info["profile"], 0.020),
         "capex_ratio":              round(max(capex_ratio, 0), 4),
         "depreciation_ratio":       round(max(dep_ratio, 0), 4),
         "working_capital_ratio":    0.00,
@@ -900,8 +930,14 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
     cf_latest_yr = max(cf_data.keys()) if cf_data else None
     cf_latest = cf_data.get(cf_latest_yr, {}) if cf_latest_yr else {}
 
-    da_available  = (cf_latest.get("depreciation_total") is not None
-                     or cf_latest.get("depreciation") is not None)
+    # D&A 가용성 판단:
+    # 우선순위: CF 직접 추출 → 비현금조정 proxy (noncash_adjustments × 0.70)
+    da_direct    = (cf_latest.get("depreciation_total") is not None
+                    or cf_latest.get("depreciation") is not None)
+    da_proxy     = (cf_latest.get("noncash_adjustments") is not None
+                    and cf_latest.get("noncash_adjustments", 0) > 0)
+    da_available = da_direct or da_proxy
+
     cfo           = cf_latest.get("cash_flow_from_operations")
     capex_raw     = (cf_latest.get("capex_tangible") or 0) + (cf_latest.get("capex_intangible") or 0)
     use_cfo_method = (not da_available) and (cfo is not None) and (capex_raw > 0) and (base_revenue > 0)
@@ -911,10 +947,14 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
         base_fcf_cfo = cfo - capex_raw
         fcf_margin   = base_fcf_cfo / base_revenue
         warnings.append(
-            f"D&A 직접 추출 실패 → CFO - CAPEX 방식으로 FCF 계산 "
+            f"D&A 직접·proxy 추출 모두 실패 → CFO - CAPEX 방식으로 FCF 계산 "
             f"(CFO {cfo:,.0f}억, CAPEX {capex_raw:,.0f}억, FCF {base_fcf_cfo:,.0f}억, "
-            f"FCF margin {fcf_margin:.2%}). "
-            "D&A 추출 가능 시 Method A(NOPAT+D&A-CAPEX)로 전환하세요."
+            f"FCF margin {fcf_margin:.2%})."
+        )
+    elif da_proxy and not da_direct:
+        warnings.append(
+            f"D&A 직접 추출 실패 → 비현금조정 proxy 기반 D&A(dep_ratio={dep_r:.1%}) 사용. "
+            "Method A(NOPAT+D&A-CAPEX)로 FCF 계산합니다."
         )
 
     # ── 5개년 추정 (연도별 성장률 있으면 2-Stage, 없으면 단일값 fallback) ──
