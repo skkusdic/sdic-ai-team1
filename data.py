@@ -1042,6 +1042,30 @@ def get_dcf_inputs(company_name: str) -> dict:
                                        "당기순손익조정을 위한 가감",
                                        "비현금항목조정"])
 
+        cf_direct_total = _dep_total  # CF 직접 추출값 (없으면 None)
+
+        # ── XBRL D&A fallback (환경변수 ENABLE_XBRL_DA_FALLBACK=true 시 활성) ──
+        # CF 직접 추출 실패 시에만 호출. CF 직접값이 있으면 XBRL 호출 생략.
+        # noncash_adjustments × 70% proxy는 절대 사용하지 않음.
+        xbrl_da: dict = {}
+        _xbrl_enabled = os.environ.get("ENABLE_XBRL_DA_FALLBACK", "false").lower() == "true"
+        if _xbrl_enabled and cf_direct_total is None:
+            try:
+                xbrl_res = get_depreciation_from_xbrl_notes(corp_code, base_year)
+                if xbrl_res and xbrl_res.get("confidence") in ("high", "medium"):
+                    xbrl_da = {
+                        "xbrl_depreciation_total": xbrl_res.get("depreciation_total"),
+                        "xbrl_depreciation":       xbrl_res.get("depreciation"),
+                        "xbrl_amortization":       xbrl_res.get("amortization"),
+                        "xbrl_roua_depreciation":  xbrl_res.get("roua_depreciation"),
+                        "xbrl_impairment_loss":    xbrl_res.get("impairment_loss"),
+                        "xbrl_da_confidence":      xbrl_res.get("confidence"),
+                        "xbrl_da_source":          "separate" if xbrl_res.get("separate_fallback") else "consolidated",
+                        "xbrl_da_note":            xbrl_res.get("note", ""),
+                    }
+            except Exception as _xbrl_err:
+                xbrl_da = {"xbrl_da_note": f"XBRL 조회 실패: {_xbrl_err}"}
+
         cash_flow = {
             base_year: {
                 "cash_flow_from_operations": _match_account(latest_items, ("CF",),
@@ -1052,7 +1076,9 @@ def get_dcf_inputs(company_name: str) -> dict:
                 "amortization":              _amor,
                 "roua_depreciation":         _roua,
                 "depreciation_total":        _dep_total,   # CF 직접 추출 (우선)
+                "depreciation_source":       "cf_direct" if _dep_total is not None else None,
                 "noncash_adjustments":       _noncash_adj, # 참고용 비현금조정 합계. D&A proxy로 사용하지 않음
+                **xbrl_da,                                 # XBRL fallback (활성 시)
             }
         }
 

@@ -922,26 +922,85 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
     cf_latest_yr = max(cf_data.keys()) if cf_data else None
     cf_latest = cf_data.get(cf_latest_yr, {}) if cf_latest_yr else {}
 
-    # D&A 가용성 판단:
-    # 직접 추출값(depreciation_total / depreciation)만 신뢰.
-    # noncash_adjustments는 D&A로 사용하지 않음 — 외환손익·충당금 등 혼입.
-    da_direct    = (cf_latest.get("depreciation_total") is not None
-                    or cf_latest.get("depreciation") is not None)
-    da_available = da_direct  # proxy 없이 직접값만 허용
+    # ── FCF 계산 방식 결정 (3단계 우선순위) ────────────────────────────────
+    # 1. NOPAT_DA_CAPEX_CF_DIRECT: CF에서 직접 D&A 추출 성공
+    # 2. NOPAT_DA_CAPEX_XBRL:      CF 실패 + XBRL D&A confidence high/medium
+    # 3. CFO_CAPEX:                 D&A 없음 + CFO/CAPEX 가용
+    # 4. LOW_CONFIDENCE_PROXY:      핵심 데이터 모두 부족
+    # noncash_adjustments는 절대 D&A로 사용하지 않음.
 
-    cfo       = cf_latest.get("cash_flow_from_operations")
-    capex_raw = (cf_latest.get("capex_tangible") or 0) + (cf_latest.get("capex_intangible") or 0)
-    use_cfo_method = (not da_direct) and (cfo is not None) and (capex_raw > 0) and (base_revenue > 0)
+    da_direct   = (cf_latest.get("depreciation_total") is not None
+                   or cf_latest.get("depreciation") is not None)
+    xbrl_total  = cf_latest.get("xbrl_depreciation_total")
+    xbrl_conf   = cf_latest.get("xbrl_da_confidence")           # high / medium / low / None
+    da_xbrl     = (xbrl_total is not None and xbrl_conf in ("high", "medium"))
 
-    fcf_margin: float | None = None  # CFO 방식 사용 시 FCF/매출 비율
-    if use_cfo_method:
-        base_fcf_cfo = cfo - capex_raw
-        fcf_margin   = base_fcf_cfo / base_revenue
+    cfo         = cf_latest.get("cash_flow_from_operations")
+    capex_raw   = (cf_latest.get("capex_tangible") or 0) + (cf_latest.get("capex_intangible") or 0)
+
+    # 실제 FCF 계산에 사용할 D&A 비율 결정
+    if da_direct:
+        fcf_method_key  = "NOPAT_DA_CAPEX_CF_DIRECT"
+        use_cfo_method  = False
+        fcf_margin      = None
+    elif da_xbrl:
+        fcf_method_key  = "NOPAT_DA_CAPEX_XBRL"
+        use_cfo_method  = False
+        fcf_margin      = None
+        # XBRL D&A → dep_r 덮어쓰기 (per-revenue 비율로 환산)
+        dep_r = xbrl_total / base_revenue
         warnings.append(
-            f"D&A 직접 추출 실패 → CFO - CAPEX 방식으로 FCF 계산 "
-            f"(CFO {cfo:,.0f}억, CAPEX {capex_raw:,.0f}억, FCF {base_fcf_cfo:,.0f}억, "
-            f"FCF margin {fcf_margin:.2%})."
+            f"CF D&A 직접 추출 실패 → XBRL D&A fallback 사용 "
+            f"(합산 {xbrl_total:,}억, confidence={xbrl_conf}). "
+            f"dep_ratio={dep_r:.2%}로 Method A 적용."
         )
+    elif (cfo is not None) and (capex_raw > 0) and (base_revenue > 0):
+        fcf_method_key  = "CFO_CAPEX"
+        use_cfo_method  = True
+        base_fcf_cfo    = cfo - capex_raw
+        fcf_margin      = base_fcf_cfo / base_revenue
+        warnings.append(
+            f"D&A(CF/XBRL) 모두 불가 → CFO - CAPEX 방식으로 FCF 계산 "
+            f"(CFO {cfo:,.0f}억, CAPEX {capex_raw:,.0f}억, "
+            f"FCF {base_fcf_cfo:,.0f}억, margin {fcf_margin:.2%})."
+        )
+    else:
+        fcf_method_key  = "LOW_CONFIDENCE_PROXY"
+        use_cfo_method  = False
+        fcf_margin      = None
+        warnings.append(
+            "D&A(CF/XBRL) 및 CFO-CAPEX 모두 계산 불가. "
+            "dep_ratio 기본값(2%)으로 추정하나 신뢰도가 낮습니다."
+        )
+
+    # ── fcf_methods_available: 가용 방식 전체 병기 ─────────────────────────
+    # (UI에서 사용자가 방식을 선택할 수 있도록 모든 옵션을 반환)
+    fcf_methods_available: dict[str, dict] = {}
+
+    if da_direct:
+        fcf_methods_available["nopat_da_capex_cf_direct"] = {
+            "available":  True,
+            "dep_ratio":  round(dep_r, 4),
+            "confidence": "high",
+            "note":       "CF 직접 추출 D&A 기반 Method A (가장 신뢰)",
+        }
+    if da_xbrl:
+        fcf_methods_available["nopat_da_capex_xbrl"] = {
+            "available":         True,
+            "xbrl_total_eok":    xbrl_total,
+            "dep_ratio":         round(xbrl_total / base_revenue, 4),
+            "confidence":        xbrl_conf,
+            "note":              f"XBRL D&A fallback Method A (confidence={xbrl_conf})",
+        }
+    if cfo is not None and capex_raw > 0:
+        _cfo_fcf = cfo - capex_raw
+        fcf_methods_available["cfo_capex"] = {
+            "available":   True,
+            "fcf_base_eok": round(_cfo_fcf, 1),
+            "fcf_margin":  round(_cfo_fcf / base_revenue, 4) if base_revenue else None,
+            "confidence":  "high" if da_xbrl else "medium",
+            "note":        "CFO - CAPEX 실제 현금흐름 Method B",
+        }
 
     # ── 5개년 추정 (연도별 성장률 있으면 2-Stage, 없으면 단일값 fallback) ──
     projection: dict[int, dict] = {}
@@ -954,37 +1013,35 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
         revenue  = prev_revenue * (1 + g_i)
 
         if use_cfo_method:
-            # FCF = FCF_margin × 매출 (CFO 방식)
-            fcf      = revenue * fcf_margin
+            fcf       = revenue * fcf_margin
             op_profit = revenue * op_margin
-            nopat    = op_profit * (1 - tax_rate)
-            dep      = None   # 미계산
-            capex    = revenue * cap_r
-            delta_wc = 0.0
+            nopat     = op_profit * (1 - tax_rate)
+            dep       = None
+            capex     = revenue * cap_r
+            delta_wc  = 0.0
         else:
-            # FCF = NOPAT + D&A - CAPEX - ΔWC (기본 방식)
             op_profit = revenue * op_margin
-            nopat    = op_profit * (1 - tax_rate)
-            dep      = revenue * dep_r
-            capex    = revenue * cap_r
-            delta_wc = (revenue - prev_revenue) * wc_r
-            fcf      = nopat + dep - capex - delta_wc
+            nopat     = op_profit * (1 - tax_rate)
+            dep       = revenue * dep_r
+            capex     = revenue * cap_r
+            delta_wc  = (revenue - prev_revenue) * wc_r
+            fcf       = nopat + dep - capex - delta_wc
 
         cumulative_discount *= (1 + wacc)
         pv_fcf     = fcf / cumulative_discount
         pv_fcf_sum += pv_fcf
 
         projection[i] = {
-            "growth_rate":           round(g_i, 4),
-            "revenue":               round(revenue, 1),
-            "operating_profit":      round(op_profit, 1),
-            "nopat":                 round(nopat, 1),
-            "depreciation":          round(dep, 1) if dep is not None else None,
-            "capex":                 round(capex, 1),
+            "growth_rate":               round(g_i, 4),
+            "revenue":                   round(revenue, 1),
+            "operating_profit":          round(op_profit, 1),
+            "nopat":                     round(nopat, 1),
+            "depreciation":              round(dep, 1) if dep is not None else None,
+            "capex":                     round(capex, 1),
             "change_in_working_capital": round(delta_wc, 1),
-            "fcf":                   round(fcf, 1),
-            "pv_fcf":                round(pv_fcf, 1),
-            "fcf_method":            "CFO-CAPEX" if use_cfo_method else "NOPAT+DA-CAPEX",
+            "fcf":                       round(fcf, 1),
+            "pv_fcf":                    round(pv_fcf, 1),
+            "fcf_method":                fcf_method_key,
         }
         prev_revenue = revenue
 
@@ -1050,6 +1107,8 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
             "valuation_status":    valuation_status,
             "valuation_note":      valuation_note,
         },
+        "fcf_method":            fcf_method_key,
+        "fcf_methods_available": fcf_methods_available,
         "warnings": warnings,
         "error":    None,
     }
