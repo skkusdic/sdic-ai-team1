@@ -30,23 +30,30 @@ def _get_corp_list():
     return _corp_list_cache
 
 
-def _is_english(text: str) -> bool:
-    alpha = sum(1 for c in text if c.isascii() and c.isalpha())
-    return alpha / max(len(text), 1) >= 0.5
+def _has_english(text: str) -> bool:
+    return any(c.isascii() and c.isalpha() for c in text)
+
+
+def _korean_part(text: str) -> str:
+    """한국어 글자만 추출해서 반환."""
+    return "".join(c for c in text if "가" <= c <= "힣" or "ㄱ" <= c <= "ㅎ")
 
 
 def _normalize_name(company_name: str) -> str:
-    """영문 입력이면 Claude로 DART 등록 회사명으로 변환, 한국어면 그대로 반환."""
-    if not _is_english(company_name):
+    """영문/혼합 입력이면 Claude로 DART 등록 회사명으로 변환, 한국어면 그대로 반환."""
+    if not _has_english(company_name):
         return company_name
     from claude_client import ask
     result = ask(
-        f"'{company_name}'은 한국 어느 기업입니까? "
-        "DART(금융감독원 전자공시시스템)에 등록된 정식 회사명만 답하세요. "
-        "회사명 외 다른 말은 절대 쓰지 마세요.",
+        f"다음은 한국 기업명입니다: '{company_name}'\n"
+        "이 기업의 DART(금융감독원 전자공시시스템) 등록 정식 회사명을 한국어로만 답하세요.\n"
+        "반드시 회사명만 출력하고, 설명·부연·거절 문장은 절대 쓰지 마세요.\n"
+        "모르면 한국어 부분만 붙여서 출력하세요.",
         max_tokens=30,
     ).strip()
-    return result if result else company_name
+    if not result or len(result) > 20 or not any("가" <= c <= "힣" for c in result):
+        return company_name
+    return result
 
 
 def _find_corp_code(company_name: str) -> str:
@@ -54,7 +61,19 @@ def _find_corp_code(company_name: str) -> str:
     raw = company_name.strip()
     normalized = _normalize_name(raw)
 
-    candidates = list(dict.fromkeys([normalized, raw, normalized.replace(" ", ""), raw.replace(" ", "")]))
+    def _strip_suffix(name: str) -> str:
+        for suffix in ["주식회사", "(주)", " 주식회사"]:
+            name = name.replace(suffix, "")
+        return name.strip()
+
+    korean_only = _korean_part(raw)
+    candidates = list(dict.fromkeys([
+        normalized, raw,
+        _strip_suffix(normalized), _strip_suffix(raw),
+        normalized.replace(" ", ""), raw.replace(" ", ""),
+        _strip_suffix(normalized).replace(" ", ""),
+        korean_only,
+    ]))
 
     for cand in candidates:
         results = corp_list.find_by_corp_name(cand, exactly=True) or []
