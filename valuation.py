@@ -1003,16 +1003,35 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
         prev_revenue = revenue
 
     # ── Terminal Value & 기업가치 ─────────────────────────────────────────
-    fcf5            = projection[5]["fcf"]
-    terminal_value  = fcf5 * (1 + tgr) / (wacc - tgr)
-    pv_tv           = terminal_value / cumulative_discount
+    fcf5 = projection[5]["fcf"]
+
+    if fcf5 <= 0:
+        terminal_value = 0.0
+        pv_tv = 0.0
+        warnings.append(
+            f"5년차 FCF({fcf5:,.0f}억)이 0 이하 — Terminal Value를 0으로 처리합니다. "
+            "역성장·고비용 구조가 지속될 경우 청산 가치 또는 채권자 가치 관점으로 해석하세요."
+        )
+    else:
+        terminal_value = fcf5 * (1 + tgr) / (wacc - tgr)
+        pv_tv = terminal_value / cumulative_discount
+
     enterprise_value = pv_fcf_sum + pv_tv
-    equity_value    = enterprise_value - net_debt
+    equity_value = enterprise_value - net_debt
 
     value_per_share: int | None = None
     if shares and shares > 0:
-        # 억원 → 원 변환 후 주식 수로 나눔
-        value_per_share = round(equity_value * 100_000_000 / shares)
+        if equity_value < 0:
+            value_per_share = 0
+            warnings.append(
+                f"추정 Enterprise Value({enterprise_value:,.0f}억)이 순차입금({net_debt:,.0f}억)보다 낮아 "
+                f"Equity Value가 음수({equity_value:,.0f}억)입니다. "
+                "주식의 유한책임 특성상 주당 가치는 0으로 표시합니다. "
+                "채권자 우선 변제 후 주주에게 돌아오는 잔여가치가 없는 구조입니다."
+            )
+        else:
+            # 억원 → 원 변환 후 주식 수로 나눔
+            value_per_share = round(equity_value * 100_000_000 / shares)
 
     return {
         "assumptions": assumptions,
@@ -1172,14 +1191,17 @@ if __name__ == "__main__":
     print(f"  순차입금         : {val.get('net_debt', 0):,.0f}억원")
     print(f"  Equity Value     : {val.get('equity_value', 0):,.0f}억원")
     vps = val.get("value_per_share")
-    print(f"  주당 가치 (DCF)  : {vps:,}원" if vps else "  주당 가치 (DCF)  : None (주식수 없음)")
+    print(f"  주당 가치 (DCF)  : {vps:,}원" if vps is not None else "  주당 가치 (DCF)  : None (주식수 없음)")
 
     # ── 현재 주가 vs DCF 비교 ────────────────────────────────────────────
     mm = dcf_inputs.get("market_metrics", {})
     current_price = mm.get("current_price")
-    if current_price and vps:
-        ratio = current_price / vps
-        print(f"  현재 주가        : {current_price:,}원  (DCF 대비 {ratio:.2f}배)")
+    if current_price and vps is not None:
+        if vps > 0:
+            ratio = current_price / vps
+            print(f"  현재 주가        : {current_price:,}원  (DCF 대비 {ratio:.2f}배)")
+        else:
+            print(f"  현재 주가        : {current_price:,}원  (DCF VPS=0 — 유한책임 하한)")
 
     # ── 민감도 분석 (자동 범위) ───────────────────────────────────────────
     print("\n[ 민감도 분석 — 성장률 × 할인율 VPS(원) ]")
@@ -1210,7 +1232,7 @@ if __name__ == "__main__":
     for k in ("bear", "base", "bull"):
         s = scenario_res["scenarios"][k]
         rates_str = " ".join(f"{r:.1%}" for r in s["growth_rates"])
-        vps_str   = f"{s['value_per_share']:>12,}" if s["value_per_share"] else "         N/A"
+        vps_str   = f"{s['value_per_share']:>12,}" if s["value_per_share"] is not None else "         N/A"
         gap_str   = f"{s['valuation_gap']:>+.1%}" if s["valuation_gap"] is not None else "   N/A"
         err_str   = f" ⚠{s['error']}" if s["error"] else ""
         print(f"  {s['label']:<6} | {rates_str:<40} | {s['discount_rate']:>5.1%} | {s['operating_margin']:>5.1%} | {vps_str} | {gap_str}{err_str}")
