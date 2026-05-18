@@ -21,6 +21,10 @@ from rag import retrieve, answer_with_rag
 from text2sql import run_text2sql
 from data import DB_PATH, get_dcf_inputs
 from valuation import build_default_assumptions, calculate_dcf
+try:
+    from valuation import calculate_dcf_scenarios as _calc_scenarios
+except ImportError:
+    _calc_scenarios = None
 
 st.set_page_config(page_title="AI 재무 컨설팅 어시스턴트", layout="wide")
 
@@ -1454,6 +1458,24 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                     else:
                         val = result["valuation"]
                         vps = val.get("value_per_share")
+                        v_status = val.get("valuation_status", "valid")
+                        v_note   = val.get("valuation_note", "")
+
+                        if vps is not None:
+                            vps_display = f"{vps:,}원"
+                            vps_warning = None
+                        elif v_status == "invalid_negative_fcf":
+                            vps_display = "N/A (FCF 음수)"
+                            vps_warning = v_note
+                        elif v_status == "invalid_negative_ev":
+                            vps_display = "N/A (EV 음수)"
+                            vps_warning = None
+                        elif v_status == "invalid_negative_equity":
+                            vps_display = "N/A (순부채 초과)"
+                            vps_warning = None
+                        else:
+                            vps_display = "N/A"
+                            vps_warning = None
 
                         # ── DCF KPI 카드 3개 ──
                         def _dcf_card(label, value):
@@ -1475,22 +1497,55 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         with _dv2:
                             st.markdown(_dcf_card("Equity Value", f"{val['equity_value']:,.0f}억원"), unsafe_allow_html=True)
                         with _dv3:
-                            st.markdown(_dcf_card("주당 가치", f"{vps:,}원" if vps else "N/A"), unsafe_allow_html=True)
+                            st.markdown(_dcf_card("주당 가치", vps_display), unsafe_allow_html=True)
+                        if vps_warning:
+                            _, _wv, _ = st.columns([1, 3, 1])
+                            with _wv:
+                                st.warning(vps_warning)
 
                         # ── 5개년 추정 표 ──
                         st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
                         st.markdown("### 5개년 추정")
                         proj = result["projection"]
-                        _proj_df = pd.DataFrame([
-                            {"연차":        f"{yr}년차",
-                             "매출(억원)":   p["revenue"],
-                             "FCF(억원)":    p["fcf"],
-                             "PV_FCF(억원)": p["pv_fcf"]}
-                            for yr, p in proj.items()
-                        ])
+
+                        _FCF_METHOD_LABELS = {
+                            "NOPAT_DA_CAPEX_CF_DIRECT": "FCF = NOPAT + D&A − 유지CAPEX (CF 직접 추출)",
+                            "NOPAT_DA_CAPEX_XBRL":      "FCF = NOPAT + D&A − 유지CAPEX (XBRL fallback)",
+                            "CFO_CAPEX":                "FCF = 영업현금흐름 − CAPEX (D&A 추출 불가)",
+                            "LOW_CONFIDENCE_PROXY":     "⚠ FCF 신뢰도 낮음 — 참고값으로만 활용",
+                        }
+                        _fcf_method = result.get("fcf_method") or (
+                            proj.get(1, {}).get("fcf_method") if proj else None
+                        )
+                        if _fcf_method and _fcf_method in _FCF_METHOD_LABELS:
+                            _, _mc, _ = st.columns([1, 4, 1])
+                            with _mc:
+                                _method_text = _FCF_METHOD_LABELS[_fcf_method]
+                                if _fcf_method == "LOW_CONFIDENCE_PROXY":
+                                    st.warning(_method_text)
+                                else:
+                                    st.caption(_method_text)
+
+                        _proj_rows = []
+                        for yr, p in proj.items():
+                            _maint = p.get("maintenance_capex")
+                            if _maint is None:
+                                _maint = p.get("capex")
+                            _proj_rows.append({
+                                "연차":           f"{yr}년차",
+                                "매출(억원)":      p["revenue"],
+                                "NOPAT(억원)":     p.get("nopat"),
+                                "D&A(억원)":       p.get("depreciation"),
+                                "유지CAPEX(억원)": _maint,
+                                "성장CAPEX(억원)": p.get("growth_capex"),
+                                "FCF(억원)":       p["fcf"],
+                                "PV_FCF(억원)":    p["pv_fcf"],
+                            })
+                        _proj_df = pd.DataFrame(_proj_rows)
+                        _fmt_cols = {c: "{:,.0f}" for c in _proj_df.columns if c != "연차"}
                         _proj_styled = (
                             _proj_df.style
-                            .format({"매출(억원)": "{:,.0f}", "FCF(억원)": "{:,.0f}", "PV_FCF(억원)": "{:,.0f}"})
+                            .format(_fmt_cols, na_rep="-")
                             .set_properties(**{"text-align": "center"})
                             .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
                             .hide(axis="index")
@@ -1498,6 +1553,60 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         _, _tbl, _ = st.columns([1, 4, 1])
                         with _tbl:
                             st.dataframe(_proj_styled, use_container_width=True, hide_index=True)
+
+                        # ── Bear / Base / Bull 시나리오 ──
+                        if _calc_scenarios is not None:
+                            try:
+                                _asm_scen = build_default_assumptions(dcf_inputs)
+                                _scen_res = _calc_scenarios(dcf_inputs, _asm_scen)
+                                st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
+                                st.markdown("### 시나리오 분석")
+                                _scen_rows = []
+                                for _name, _s in _scen_res.items():
+                                    _sv = _s.get("valuation", {})
+                                    _ss = _sv.get("valuation_status", "valid")
+                                    _svps = _sv.get("value_per_share")
+                                    if _svps is not None:
+                                        _vps_cell = f"{_svps:,}원"
+                                    elif _ss == "invalid_negative_fcf":
+                                        _vps_cell = "N/A [FCF 음수]"
+                                    elif _ss == "invalid_negative_ev":
+                                        _vps_cell = "N/A [EV 음수]"
+                                    elif _ss == "invalid_negative_equity":
+                                        _vps_cell = "N/A [순부채 초과]"
+                                    else:
+                                        _vps_cell = "N/A"
+                                    _sa = _s.get("assumptions", {})
+                                    _current_price = dcf_inputs.get("company_info", {}).get("current_price")
+                                    if _svps and _current_price and _current_price > 0:
+                                        _updown = f"{(_svps / _current_price - 1) * 100:+.1f}%"
+                                    else:
+                                        _updown = "-"
+                                    _g_list = _sa.get("revenue_growth_rates") or [_sa.get("revenue_growth_rate", 0)] * 5
+                                    _g_repr = f"{_g_list[0]:.1%}" if _g_list else "-"
+                                    _scen_rows.append({
+                                        "시나리오":       _name,
+                                        "성장률(1~5년)":  _g_repr,
+                                        "할인율":         f"{_sa.get('discount_rate', 0):.1%}",
+                                        "OPM":            f"{_sa.get('operating_margin', 0):.1%}",
+                                        "TGR":            f"{_sa.get('terminal_growth_rate', 0):.1%}",
+                                        "주당가치":       _vps_cell,
+                                        "현재가 대비":    _updown,
+                                    })
+                                if _scen_rows:
+                                    _scen_df = pd.DataFrame(_scen_rows)
+                                    _, _stbl, _ = st.columns([1, 4, 1])
+                                    with _stbl:
+                                        st.dataframe(
+                                            _scen_df.style
+                                            .set_properties(**{"text-align": "center"})
+                                            .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
+                                            .hide(axis="index"),
+                                            use_container_width=True,
+                                            hide_index=True,
+                                        )
+                            except Exception as _e:
+                                st.caption(f"시나리오 분석 로드 실패: {_e}")
 
                         if result.get("warnings"):
                             _, _wc, _ = st.columns([1, 4, 1])
