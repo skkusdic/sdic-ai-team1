@@ -507,6 +507,87 @@ def calculate_beta(stock_code: str, period_years: int = 2) -> dict | None:
         return None
 
 
+def get_macro_indicators() -> dict:
+    """
+    한국은행 ECOS API에서 최신 거시 지표 조회.
+    - 국고채 10년물 수익률 (817Y002/010210000, 일별) → CAPM Rf
+    - 한은 기준금리  (722Y001/0101000, 월별)
+    - USD/KRW 환율  (731Y001/0000001, 일별)
+    ECOS_API_KEY 없거나 API 실패 시 고정 기본값으로 fallback.
+    """
+    api_key = os.environ.get("ECOS_API_KEY")
+    if not api_key:
+        return {"risk_free_rate": 0.042, "base_rate": None, "usd_krw": None, "source": "default_fallback"}
+
+    now = datetime.now()
+
+    def _fetch_daily(stat_code: str, item_code: str) -> float | None:
+        # 최근 30일 범위로 일별 조회 → 마지막 값
+        end_d = now.strftime("%Y%m%d")
+        m, y = now.month - 1, now.year
+        if m <= 0:
+            m, y = 12, y - 1
+        start_d = f"{y}{m:02d}01"
+        url = (
+            f"https://ecos.bok.or.kr/api/StatisticSearch/{api_key}"
+            f"/json/kr/1/30/{stat_code}/D/{start_d}/{end_d}/{item_code}"
+        )
+        try:
+            rows = requests.get(url, timeout=8).json().get("StatisticSearch", {}).get("row", [])
+            val = rows[-1].get("DATA_VALUE", "") if rows else ""
+            return float(val) / 100 if val else None
+        except Exception:
+            return None
+
+    def _fetch_monthly(stat_code: str, item_code: str) -> float | None:
+        # 최근 6개월 범위로 월별 조회 → 마지막 값
+        end_m = now.strftime("%Y%m")
+        m, y = now.month - 6, now.year
+        if m <= 0:
+            m += 12; y -= 1
+        start_m = f"{y}{m:02d}"
+        url = (
+            f"https://ecos.bok.or.kr/api/StatisticSearch/{api_key}"
+            f"/json/kr/1/6/{stat_code}/M/{start_m}/{end_m}/{item_code}"
+        )
+        try:
+            rows = requests.get(url, timeout=8).json().get("StatisticSearch", {}).get("row", [])
+            val = rows[-1].get("DATA_VALUE", "") if rows else ""
+            return float(val) / 100 if val else None
+        except Exception:
+            return None
+
+    def _fetch_daily_raw(stat_code: str, item_code: str) -> float | None:
+        end_d = now.strftime("%Y%m%d")
+        m, y = now.month - 1, now.year
+        if m <= 0:
+            m, y = 12, y - 1
+        start_d = f"{y}{m:02d}01"
+        url = (
+            f"https://ecos.bok.or.kr/api/StatisticSearch/{api_key}"
+            f"/json/kr/1/30/{stat_code}/D/{start_d}/{end_d}/{item_code}"
+        )
+        try:
+            rows = requests.get(url, timeout=8).json().get("StatisticSearch", {}).get("row", [])
+            val = rows[-1].get("DATA_VALUE", "") if rows else ""
+            return float(val) if val else None
+        except Exception:
+            return None
+
+    rf_live   = _fetch_daily("817Y002", "010210000")   # 국고채 10년물 (연%, /100)
+    base_live = _fetch_monthly("722Y001", "0101000")   # 한은 기준금리 (연%, /100)
+    usd_krw   = _fetch_daily_raw("731Y001", "0000001") # USD/KRW (원, 그대로)
+
+    risk_free_rate = rf_live if rf_live and 0.01 <= rf_live <= 0.15 else 0.042
+
+    return {
+        "risk_free_rate": round(risk_free_rate, 4),
+        "base_rate":      round(base_live, 4) if base_live else None,
+        "usd_krw":        round(usd_krw, 1)   if usd_krw  else None,
+        "source":         "BOK ECOS" if rf_live else "default_fallback",
+    }
+
+
 def calculate_capm_discount_rate(
     stock_code: str,
     risk_free_rate: float = 0.042,
@@ -518,7 +599,7 @@ def calculate_capm_discount_rate(
 
     Args:
         stock_code: KRX 종목코드
-        risk_free_rate: 무위험수익률 (기본 4.2% — 한국 10년물 근사)
+        risk_free_rate: 무위험수익률 (기본 4.2% — ECOS 국고채 10년물 또는 고정 근사값)
         equity_risk_premium: 시장 위험 프리미엄 (기본 5.5% 고정 가정)
     Returns:
         {"discount_rate", "beta", "risk_free_rate", "equity_risk_premium", "method", "source_note"} or None
@@ -914,8 +995,9 @@ def get_dcf_inputs(company_name: str) -> dict:
         shares = _fetch_shares(corp_code)
 
         # ── 시장 지표 (PER/PBR/Beta/CAPM) ────────────────────────────────
+        macro        = get_macro_indicators()
         price_data   = get_current_price(stock_code)
-        capm_data    = calculate_capm_discount_rate(stock_code)
+        capm_data    = calculate_capm_discount_rate(stock_code, risk_free_rate=macro["risk_free_rate"])
         shares_out   = shares.get("shares_outstanding")
 
         current_price = price_data.get("current_price") if price_data else None
@@ -931,6 +1013,7 @@ def get_dcf_inputs(company_name: str) -> dict:
         per = round(current_price / eps, 2) if (current_price and eps and eps > 0) else None
         pbr = round(current_price / bps, 2) if (current_price and bps and bps > 0) else None
 
+        rf_source = macro.get("source", "default_fallback")
         market_metrics = {
             "current_price":        current_price,
             "price_date":           price_date,
@@ -940,10 +1023,20 @@ def get_dcf_inputs(company_name: str) -> dict:
             "pbr":                  pbr,
             "beta":                 capm_data.get("beta")                if capm_data else None,
             "capm_discount_rate":   capm_data.get("discount_rate")       if capm_data else None,
-            "risk_free_rate":       capm_data.get("risk_free_rate")      if capm_data else 0.042,
+            "risk_free_rate":       capm_data.get("risk_free_rate")      if capm_data else macro["risk_free_rate"],
             "equity_risk_premium":  capm_data.get("equity_risk_premium") if capm_data else 0.055,
             "discount_rate_method": "CAPM cost of equity proxy",
-            "source_note":          "CAPM discount rate is a reference value only. Rf and ERP are fixed assumptions.",
+            "source_note": (
+                f"Rf={macro['risk_free_rate']:.2%} (BOK ECOS 국고채 10년물 실시간). ERP 5.5% 고정 가정."
+                if rf_source == "BOK ECOS"
+                else "Rf=4.2% 고정 근사값 (ECOS 조회 실패). ERP 5.5% 고정 가정."
+            ),
+            "macro": {
+                "risk_free_rate": macro["risk_free_rate"],
+                "base_rate":      macro.get("base_rate"),
+                "usd_krw":        macro.get("usd_krw"),
+                "source":         rf_source,
+            },
         }
 
         # ── 이상치 연도 이벤트 탐색 (전체 이상치 연도, 설명 노트용) ──────────────
