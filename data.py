@@ -1196,3 +1196,177 @@ if __name__ == "__main__":
 
     print(f"\n  소요시간: {elapsed:.1f}s")
     print("=" * 55)
+
+
+# ── XBRL D&A 추출 PoC ────────────────────────────────────────────────────────
+# PoC 단계. get_dcf_inputs()에 자동 연결하지 않음.
+# 결과는 기존 CF 직접 추출값 확인/보완용으로만 사용할 것.
+
+def get_depreciation_from_xbrl_notes(corp_code: str, year: int) -> dict | None:
+    """
+    OpenDART XBRL instance document에서 D&A 관련 항목 추출 (PoC).
+
+    전략:
+      1. 사업보고서 접수번호(rcept_no) 조회
+      2. fnlttXbrl.xml로 XBRL ZIP 다운로드
+      3. ifrs-full D&A 태그 탐색 + "전사·연결·당기" 컨텍스트 필터
+      4. 결과 반환 + confidence 표시
+
+    중요:
+      - 기존 CF 직접 추출값(depreciation_total)이 있으면 해당 값이 우선.
+      - 이 함수 결과만으로 FCF Method A 전환 금지.
+      - 회사별 XBRL 구조 차이로 confidence가 "high"가 아닐 수 있음.
+    """
+    import io, zipfile
+    import xml.etree.ElementTree as ET
+
+    result: dict = {
+        "source":            "OpenDART XBRL",
+        "year":              year,
+        "corp_code":         corp_code,
+        "depreciation":      None,   # 유형자산 감가상각비 (억원)
+        "amortization":      None,   # 무형자산 상각비 (억원)
+        "roua_depreciation": None,   # 사용권자산 상각비 (억원)
+        "depreciation_total": None,  # 합산 (억원)
+        "impairment_loss":   None,   # 손상차손 (억원)
+        "matched_tags":      [],
+        "confidence":        "low",
+        "note":              "",
+    }
+
+    # ── 1. 사업보고서 rcept_no 조회 ─────────────────────────────────────
+    try:
+        r_list = requests.get(
+            "https://opendart.fss.or.kr/api/list.json",
+            params={
+                "crtfc_key":    DART_API_KEY,
+                "corp_code":    corp_code,
+                "bgn_de":       f"{year}0101",
+                "end_de":       f"{year + 1}0430",
+                "pblntf_ty":    "A",           # 사업보고서
+                "last_reprt_at": "Y",
+            },
+            timeout=15,
+        )
+        items = r_list.json().get("list", [])
+        rcept_no = next(
+            (it["rcept_no"] for it in items if f"{year}.12" in it.get("report_nm", "")),
+            None,
+        )
+        if not rcept_no:
+            result["note"] = f"{year}년 사업보고서 rcept_no를 찾지 못했습니다."
+            return result
+    except Exception as e:
+        result["note"] = f"rcept_no 조회 실패: {e}"
+        return result
+
+    # ── 2. XBRL ZIP 다운로드 ────────────────────────────────────────────
+    try:
+        r_xbrl = requests.get(
+            "https://opendart.fss.or.kr/api/fnlttXbrl.xml",
+            params={
+                "crtfc_key":  DART_API_KEY,
+                "rcept_no":   rcept_no,
+                "reprt_code": "11011",   # 사업보고서
+                "repTp":      "3",       # 현금흐름표 기준 (D&A 주석 포함)
+            },
+            timeout=40,
+        )
+        if r_xbrl.content[:2] != b"PK":
+            result["note"] = "XBRL ZIP 수신 실패 (응답이 ZIP이 아님)"
+            return result
+
+        with zipfile.ZipFile(io.BytesIO(r_xbrl.content)) as z:
+            xbrl_name = next((n for n in z.namelist() if n.endswith(".xbrl")), None)
+            if not xbrl_name:
+                result["note"] = "ZIP 내 .xbrl 파일 없음"
+                return result
+            xbrl_data = z.read(xbrl_name)
+    except Exception as e:
+        result["note"] = f"XBRL 다운로드 실패: {e}"
+        return result
+
+    # ── 3. XBRL 파싱 + D&A 태그 탐색 ────────────────────────────────────
+    # 탐색 태그: ifrs-full 표준 D&A 태그
+    _TARGET_TAGS = {
+        "DepreciationExpense":                          "depreciation",
+        "AmortisationIntangibleAssetsOtherThanGoodwill": "amortization",
+        "DepreciationRightofuseAssets":                 "roua_depreciation",
+        "ImpairmentLossRecognisedInProfitOrLoss":       "impairment_loss",
+    }
+
+    # 컨텍스트 선택 원칙:
+    # - "CFY{year}" 포함: 당기
+    # - "ConsolidatedMember" 포함: 연결재무제표
+    # - ConsolidatedMember 이후 추가 axis 없음 (after_CM == ""): 세그먼트/분류 없는 총액
+    _year_tag   = f"CFY{year}"
+
+    try:
+        root = ET.fromstring(xbrl_data)
+    except ET.ParseError as e:
+        result["note"] = f"XBRL XML 파싱 실패: {e}"
+        return result
+
+    candidates: dict[str, list[int]] = {k: [] for k in _TARGET_TAGS.values()}
+    matched_tags: list[str] = []
+
+    for elem in root.iter():
+        local = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+        if local not in _TARGET_TAGS:
+            continue
+        ctx = elem.get("contextRef", "")
+        val_str = elem.text
+        if val_str is None:
+            continue
+
+        is_current  = _year_tag in ctx
+        is_consol   = "ConsolidatedMember" in ctx and "SeparateMember" not in ctx
+        after_cm    = ctx.split("ConsolidatedMember")[-1] if "ConsolidatedMember" in ctx else ""
+        is_total_ctx = after_cm == ""  # 추가 axis가 없는 총액 컨텍스트
+
+        if not (is_current and is_consol and is_total_ctx):
+            continue
+
+        try:
+            val_eok = int(val_str) // 100_000_000   # 원 → 억원
+        except ValueError:
+            continue
+
+        field = _TARGET_TAGS[local]
+        candidates[field].append(val_eok)
+        if local not in matched_tags:
+            matched_tags.append(local)
+
+    # 중복 제거: 같은 field에 동일한 값이 여러 번 나타나면 중복(동일 값 max 선택)
+    for field, vals in candidates.items():
+        if vals:
+            result[field] = max(set(vals), key=vals.count)  # 최빈값 선택
+
+    result["matched_tags"] = matched_tags
+
+    # D&A 합산: 유형 + 무형 + ROU (손상차손 제외)
+    dep   = result["depreciation"]     or 0
+    amor  = result["amortization"]     or 0
+    roua  = result["roua_depreciation"] or 0
+
+    if dep > 0 or amor > 0 or roua > 0:
+        result["depreciation_total"] = dep + amor + roua
+
+    # ── confidence 판단 ────────────────────────────────────────────────
+    if dep > 0 and amor > 0:
+        confidence = "high"
+    elif dep > 0 or amor > 0:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    result["confidence"] = confidence
+    result["note"] = (
+        f"XBRL({xbrl_name})에서 D&A 항목을 탐색했습니다. "
+        f"rcept_no={rcept_no}. "
+        f"감가상각비: {dep:,}억, 무형자산상각: {amor:,}억, ROU상각: {roua:,}억. "
+        f"이 값은 PoC 단계이며 get_dcf_inputs() 직접 연결 전 검증 필요. "
+        "CF 직접 추출값이 있으면 CF 값이 우선 적용됩니다."
+    )
+
+    return result
