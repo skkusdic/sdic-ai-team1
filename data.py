@@ -623,17 +623,25 @@ def calculate_capm_discount_rate(
 
 def _search_dart_disclosures(corp_code: str, year: int) -> list[dict]:
     """
-    DART 공시검색 API로 해당 연도 유의미한 공시 목록 반환.
-    전체 공시를 가져와 클라이언트 사이드에서 보일러플레이트(임원 소유상황 등) 제외.
+    DART 공시검색 API로 해당 연도 실적 관련 유의미한 공시 목록 반환.
+    노이즈(임원·특수관계인·보험·의결권 등) 제거 후 반환.
     """
-    # 제외 키워드: 임원·주요주주 소유변동 등 분석 불필요한 반복 공시
-    _SKIP_KEYWORDS = ("임원", "주요주주", "소유상황", "소유주식", "소유변동")
-    # 포함 우선 키워드: 이 중 하나라도 포함되면 무조건 포함
-    _KEEP_KEYWORDS = (
-        "주요사항", "합병", "분할", "영업양수", "영업양도",
+    # 제외: 실적과 무관한 반복적 행정 공시
+    _SKIP = (
+        "임원", "주요주주", "소유상황", "소유주식", "소유변동",
+        "특수관계인", "보험거래", "의결권", "주주총회소집",
+        "기타경영사항",   # 자율공시는 내용 불명확
+        "최대주주등소유",  # 최대주주 지분 변동 (경영 이벤트 아님)
+    )
+    # 우선 포함: 실적에 직접 영향을 주는 공시 유형
+    _KEEP = (
+        "합병", "분할", "영업양수", "영업양도",
         "유상증자", "무상증자", "전환사채", "신주인수권",
-        "자기주식", "최대주주", "소송", "손상", "시설투자",
+        "자기주식취득", "자기주식처분",  # 단순 '자기주식'은 오탐 가능
+        "소송", "손상차손",               # '손상' 단독은 오탐 가능
+        "시설투자", "공장", "생산능력",
         "사업보고서", "반기보고서", "분기보고서",
+        "주요사항보고",
     )
 
     bgn = f"{year}0101"
@@ -655,43 +663,55 @@ def _search_dart_disclosures(corp_code: str, year: int) -> list[dict]:
         if data.get("status") == "000":
             for item in data.get("list", []):
                 name = item.get("report_nm", "")
-                # 우선 포함 키워드 확인
-                if any(k in name for k in _KEEP_KEYWORDS):
+                if any(k in name for k in _SKIP):
+                    continue
+                if any(k in name for k in _KEEP):
                     results.append({
                         "date":        item.get("rcept_dt", ""),
                         "report_name": name,
                         "source":      "OpenDART",
-                    })
-                elif not any(k in name for k in _SKIP_KEYWORDS):
-                    # 스킵 키워드도 없고 포함 키워드도 없으면 포함 (기타 유의미 공시)
-                    results.append({
-                        "date":        item.get("rcept_dt", ""),
-                        "report_name": name,
-                        "source":      "OpenDART",
+                        "signal":      "keep",   # 명시적 매칭
                     })
     except Exception:
         pass
     return results
 
 
-def _search_naver_news(company_name: str, year: int, max_results: int = 8) -> list[dict]:
+def _clean_html(text: str) -> str:
+    """HTML 태그 및 엔티티 제거."""
+    import html as _html
+    cleaned = BeautifulSoup(text, "html.parser").get_text()
+    return _html.unescape(cleaned).strip()
+
+
+def _search_naver_news(company_name: str, year: int, max_results: int = 6) -> list[dict]:
     """
-    Naver News Search API로 해당 연도 기업 이슈 뉴스 검색.
-    NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 없으면 빈 리스트 반환.
+    Naver News Search API로 해당 연도 기업 실적 관련 뉴스 검색.
+
+    개선 사항:
+    - 쿼리에 '{year}년' 포함 → 연도 맥락 명확화
+    - 제목에 회사명 + '{year}년' 동시 포함 기사만 수집 (관련 없는 기사 차단)
+    - description 반환으로 Claude 요약 품질 향상
     """
     client_id     = os.environ.get("NAVER_CLIENT_ID")
     client_secret = os.environ.get("NAVER_CLIENT_SECRET")
     if not client_id or not client_secret:
         return []
 
+    year_tag = f"{year}년"   # "2023년" 패턴으로 엄격하게 필터
+
     queries = [
-        f"{company_name} {year} 영업이익 실적",
-        f"{company_name} {year} 구조조정 일회성 손실",
+        f"{company_name} {year_tag} 영업이익 실적",
+        f"{company_name} {year_tag} 매출 성장",
+        f"{company_name} {year_tag} 업황 시장",
+        f"{company_name} {year_tag} 손실 부진",
     ]
     seen: set[str] = set()
     news: list[dict] = []
 
     for q in queries:
+        if len(news) >= max_results:
+            break
         try:
             resp = requests.get(
                 "https://openapi.naver.com/v1/search/news.json",
@@ -703,24 +723,31 @@ def _search_naver_news(company_name: str, year: int, max_results: int = 8) -> li
                 timeout=10,
             )
             for item in resp.json().get("items", []):
-                # HTML 태그 제거 (BeautifulSoup 재사용)
-                title = BeautifulSoup(item.get("title", ""), "html.parser").get_text()
-                desc  = BeautifulSoup(item.get("description", ""), "html.parser").get_text()
+                title = _clean_html(item.get("title", ""))
+                desc  = _clean_html(item.get("description", ""))
                 if not title or title in seen:
                     continue
-                # 제목 또는 본문에 해당 연도가 언급된 기사만 수집
-                # (Naver는 과거 연도 관련 기사를 최신 날짜로 반환하므로 pubDate 필터 대신 사용)
-                if str(year) not in title and str(year) not in desc:
+
+                # 엄격한 연도 필터: 제목에 '{year}년' 포함 필수
+                # (Naver 무료 API는 날짜 범위 필터 미지원 → 텍스트 필터로 대체)
+                if year_tag not in title:
                     continue
+
+                # 회사명이 제목에 없으면 관련 없는 기사일 가능성 높음
+                company_short = company_name[:2]  # "삼성전자" → "삼성"
+                if company_short not in title:
+                    continue
+
                 seen.add(title)
                 news.append({
-                    "date":   item.get("pubDate", ""),
-                    "title":  title,
-                    "link":   item.get("link", ""),
-                    "source": "Naver News",
+                    "date":        item.get("pubDate", ""),
+                    "title":       title,
+                    "description": desc[:120] if desc else "",
+                    "link":        item.get("link", ""),
+                    "source":      "Naver News",
                 })
                 if len(news) >= max_results:
-                    return news
+                    break
         except Exception:
             pass
 
@@ -728,80 +755,110 @@ def _search_naver_news(company_name: str, year: int, max_results: int = 8) -> li
 
 
 _DART_EVENT_TAG_MAP = {
-    "합병":         "합병/분할",
-    "분할":         "합병/분할",
-    "영업양수":     "영업양수도",
-    "영업양도":     "영업양수도",
-    "유상증자":     "유상증자",
-    "전환사채":     "전환사채/신주인수권",
-    "자기주식취득": "자기주식 취득/처분",   # '자기주식' 단독은 오탐 가능
-    "소송":         "소송/분쟁",
-    "손상차손":     "자산손상차손",          # '손상' 단독은 오탐 가능
-    "시설투자":     "대규모 시설투자",
-    "주요사항":     "주요사항보고서 제출",
+    "합병":           "합병/분할",
+    "분할":           "합병/분할",
+    "영업양수":       "영업양수도",
+    "영업양도":       "영업양수도",
+    "유상증자":       "유상증자",
+    "전환사채":       "전환사채/신주인수권",
+    "자기주식취득":   "자기주식 취득/처분",
+    "자기주식처분":   "자기주식 취득/처분",
+    "소송":           "소송/분쟁",
+    "손상차손":       "자산손상차손",
+    "시설투자":       "대규모 시설투자",
+    "공장":           "대규모 시설투자",
+    "주요사항보고":   "주요사항보고서 제출",
+}
+
+# 뉴스 본문 키워드 → 업황/이벤트 태그
+_NEWS_KEYWORD_TAG_MAP = {
+    "반도체": "반도체 업황",
+    "메모리": "메모리 업황",
+    "HBM":    "AI/HBM 수요",
+    "AI":     "AI/HBM 수요",
+    "구조조정": "구조조정",
+    "적자":   "적자 전환",
+    "흑자":   "흑자 전환",
+    "환율":   "환율 영향",
+    "원자재": "원자재 비용",
+    "파업":   "노사 분쟁",
+    "화재":   "생산 차질",
+    "공급과잉": "공급 과잉",
+    "수요 부진": "수요 부진",
+    "해외 확장": "해외 성장",
+    "수출":   "수출 호조",
 }
 
 
 def detect_company_events(company_name: str, corp_code: str, year: int) -> dict:
     """
-    특정 연도의 실적 왜곡 가능 이벤트 탐색 (DART 공시 + Naver News).
-
-    반환값은 설명 노트용 보조 근거이며, DCF 수치에 자동 반영하지 말 것.
-
-    Returns:
-        {
-            "company_name": str, "corp_code": str, "year": int,
-            "event_tags":   list[str],          # DART 공시 기반 이벤트 분류
-            "dart_events":  list[dict],          # 공시 목록
-            "news_events":  list[dict],          # 뉴스 목록
-            "event_note":   str,                 # Claude 요약 (사실 기반)
-            "confidence":   "low"|"medium"|"high"
-        }
+    특정 연도 실적 이상치의 보조 설명 근거 탐색 (DART 공시 + Naver News).
+    반환값은 note/tag 용도이며 DCF 수치에 자동 반영하지 말 것.
     """
     dart_events = _search_dart_disclosures(corp_code, year)
     news_events = _search_naver_news(company_name, year)
 
-    # DART 공시 기반 이벤트 태그 추출
+    # ── 태그 추출 ────────────────────────────────────────────────────────
     tags: set[str] = set()
+
+    # DART 공시 기반
     for ev in dart_events:
         for kw, tag in _DART_EVENT_TAG_MAP.items():
             if kw in ev.get("report_name", ""):
                 tags.add(tag)
 
-    # Claude로 이벤트 요약 (사실 기반, 수치 추천 금지)
+    # 뉴스 본문 기반 업황/이벤트 태그
+    for ev in news_events:
+        text = ev.get("title", "") + " " + ev.get("description", "")
+        for kw, tag in _NEWS_KEYWORD_TAG_MAP.items():
+            if kw in text:
+                tags.add(tag)
+
+    # ── 신뢰도 판단 (노이즈 제거 후 실질 근거 수 기준) ────────────────────
+    # dart_events는 이미 _KEEP 키워드 매칭된 것만 반환됨
+    # news_events는 '{year}년' + 회사명 필터 통과한 것만 반환됨
+    meaningful = len(dart_events) + len(news_events)
+    if meaningful >= 4:
+        confidence = "high"
+    elif meaningful >= 2:
+        confidence = "medium"
+    elif meaningful == 1:
+        confidence = "low"
+    else:
+        confidence = "none"
+
+    # ── Claude 요약 (근거 있을 때만) ─────────────────────────────────────
     event_note = ""
     if dart_events or news_events:
         dart_text = "\n".join(
-            f"- [{e['date']}] {e['report_name']}" for e in dart_events[:8]
+            f"- [{e['date']}] {e['report_name']}" for e in dart_events[:6]
         )
         news_text = "\n".join(
-            f"- [{e['date']}] {e['title']}" for e in news_events[:5]
+            f"- {e['title']} / {e.get('description', '')[:80]}"
+            for e in news_events[:4]
         )
         prompt = (
-            f"{company_name} {year}년 실적에 영향을 미쳤을 이벤트를 아래 목록에서 파악해주세요.\n\n"
-            f"[DART 공시]\n{dart_text or '없음'}\n\n"
-            f"[뉴스]\n{news_text or '없음'}\n\n"
-            "요청: 실적(매출·영업이익)에 영향을 미쳤을 만한 이벤트를 2~3문장으로 요약하세요. "
-            "결론·투자 의견·DCF 수치 변경 권고는 절대 쓰지 마세요. "
-            "공시·뉴스에 나타난 사실만 서술하고 출처를 함께 표기하세요. "
-            "마크다운 헤더(#)는 사용하지 마세요."
+            f"아래는 {company_name}의 {year}년 실적 이상치를 설명하는 데 활용할 공시·뉴스 목록입니다.\n\n"
+            f"[DART 공시 — {len(dart_events)}건]\n{dart_text or '없음'}\n\n"
+            f"[뉴스 — {len(news_events)}건]\n{news_text or '없음'}\n\n"
+            f"요청:\n"
+            f"- {year}년 영업이익 또는 매출에 영향을 줬을 만한 사실만 1~2문장으로 서술\n"
+            f"- 마크다운(**, #, - 등) 사용 금지\n"
+            f"- 투자의견·DCF 수치 변경·결론 제시 금지\n"
+            f"- 공시·뉴스에 없는 내용은 추정하지 말 것\n"
+            f"- 근거가 불충분하면 '명확한 이벤트 근거를 찾지 못했습니다.'라고만 답할 것"
         )
         try:
-            event_note = ask(prompt, max_tokens=250).strip()
+            event_note = ask(prompt, max_tokens=180).strip()
         except Exception:
             event_note = ""
 
-    # 신뢰도 판단
-    if len(dart_events) >= 3 or len(news_events) >= 4:
-        confidence = "high"
-    elif dart_events or len(news_events) >= 2:
-        confidence = "medium"
-    else:
-        confidence = "low"
-
-    # 이벤트 근거를 찾지 못해도 통계 이상치 판단은 유효 — 보조 설명 미확인으로 표기
+    # 근거 없음 fallback — confidence와 일관성 유지
     if not event_note:
-        event_note = f"{year}년 관련 공시·뉴스 근거를 확인하지 못했습니다. 통계 이상치(MAD 기반)로만 처리됩니다."
+        if confidence == "none":
+            event_note = f"{year}년 실적 이상치에 대한 공시·뉴스 근거를 찾지 못했습니다. 통계(MAD)로만 처리됩니다."
+        else:
+            event_note = f"{year}년 관련 근거가 수집됐으나 실적 영향 설명을 생성하지 못했습니다."
 
     return {
         "company_name": company_name,
