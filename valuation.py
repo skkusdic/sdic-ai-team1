@@ -287,14 +287,12 @@ def generate_growth_scenarios(
 ) -> dict:
     """
     classify_growth_profile() 결과를 받아 Bear / Base / Bull 성장률 리스트 생성.
-    Base = classify_growth_profile의 yearly_growth_rates (기준 케이스 그대로).
-    Bear = 더 빠른 정상화/압축 (보수적 케이스).
-    Bull = 더 느린 정상화/확장 (낙관 케이스).
+    Base = effective_cagr 기반 합리적 경로 (classify_growth_profile과 독립 계산).
+    Bear = Base 대비 보수적 압축. Bull = Base 대비 낙관적 확장.
     모든 숫자는 기업별 effective_cagr과 profile에서 자동 계산 — 고정값 없음.
     """
     profile  = growth_profile.get("profile", "moderate_growth_convergence")
     ec       = growth_profile.get("effective_cagr") or 0.05
-    base_g   = growth_profile.get("yearly_growth_rates", [0.05] * 5)
     volatile = growth_profile.get("volatile", False)
     tgr      = terminal_growth_rate
 
@@ -302,54 +300,78 @@ def generate_growth_scenarios(
         if volatile:
             bear_g = [
                 min(ec * 0.35, 0.15),
-                min(ec * 0.22, 0.10),
-                min(ec * 0.14, 0.07),
-                min(ec * 0.09, 0.05),
+                min(ec * 0.25, 0.10),
+                min(ec * 0.15, 0.07),
+                min(ec * 0.10, 0.05),
                 tgr,
             ]
-            bull_g = [
-                min(ec * 0.80, 0.50),
-                min(ec * 0.55, 0.35),
-                min(ec * 0.38, 0.22),
-                min(ec * 0.25, 0.15),
-                min(ec * 0.15, 0.08),
+            base_g = [
+                min(ec * 0.70, 0.40),
+                min(ec * 0.55, 0.28),
+                min(ec * 0.40, 0.18),
+                min(ec * 0.28, 0.12),
+                min(ec * 0.18, 0.08),
             ]
-            bear_note = "고성장+고변동성 — 빠른 성장 소멸·경쟁 심화 시나리오"
-            bull_note = "고성장+고변동성 — 변동성 완화·고성장 지속 일부 반영 시나리오"
+            bull_g = [
+                min(ec * 0.90, 0.60),
+                min(ec * 0.72, 0.45),
+                min(ec * 0.55, 0.30),
+                min(ec * 0.38, 0.20),
+                min(ec * 0.25, 0.12),
+            ]
+            bear_note = "고성장+고변동성 — 성장 급소멸·경쟁 심화 시나리오"
+            base_note = "고성장+고변동성 — 합리적 fade-down 기준 시나리오"
+            bull_note = "고성장+고변동성 — 변동성 완화·성장 지속 시나리오"
         else:
             bear_g = [
-                min(ec * 0.50, 0.20),
+                min(ec * 0.45, 0.20),
                 min(ec * 0.32, 0.14),
                 min(ec * 0.20, 0.09),
                 min(ec * 0.12, 0.06),
                 tgr,
             ]
-            bull_g = [
-                min(ec, 0.60),
-                min(ec * 0.80, 0.45),
-                min(ec * 0.60, 0.30),
-                min(ec * 0.42, 0.20),
+            base_g = [
+                min(ec * 0.70, 0.40),
+                min(ec * 0.55, 0.28),
+                min(ec * 0.40, 0.18),
                 min(ec * 0.28, 0.12),
+                min(ec * 0.18, 0.08),
+            ]
+            bull_g = [
+                min(ec * 0.90, 0.60),
+                min(ec * 0.75, 0.45),
+                min(ec * 0.58, 0.32),
+                min(ec * 0.42, 0.22),
+                min(ec * 0.28, 0.14),
             ]
             bear_note = "고성장 — 성장 조기 정상화·업황 악화 시나리오"
+            base_note = "고성장 — 점진적 fade-down 기준 시나리오"
             bull_note = "고성장 — 성장 모멘텀 유지·시장 확대 시나리오"
 
     elif profile == "moderate_growth_convergence":
         bear_g = [
             max(ec * 0.50, tgr),
-            max(ec * 0.35, tgr),
-            max(ec * 0.20, tgr),
+            max(ec * 0.38, tgr),
+            max(ec * 0.25, tgr),
             tgr,
             tgr,
+        ]
+        base_g = [
+            ec,
+            max(ec * 0.80, tgr),
+            max(ec * 0.60, tgr),
+            max(ec * 0.40, tgr),
+            max(ec * 0.25, tgr),
         ]
         bull_g = [
-            min(ec * 1.30, 0.35),
+            min(ec * 1.25, 0.35),
             min(ec * 1.10, 0.28),
             ec,
-            max(tgr, ec * 0.70),
-            max(tgr, ec * 0.35),
+            max(tgr, ec * 0.75),
+            max(tgr, ec * 0.45),
         ]
         bear_note = "중성장 — 수요 둔화·비용 압박 보수 시나리오"
+        base_note = "중성장 — 현재 성장률 점진 수렴 기준 시나리오"
         bull_note = "중성장 — 시장점유율 확대·수익성 개선 낙관 시나리오"
 
     elif profile == "low_growth_stable":
@@ -360,38 +382,56 @@ def generate_growth_scenarios(
             tgr,
             tgr,
         ]
+        base_g = [
+            max(ec, tgr),
+            max(ec * 0.90, tgr),
+            max(ec * 0.80, tgr),
+            max(ec * 0.70, tgr),
+            tgr,
+        ]
         bull_g = [
-            min(ec * 1.60, 0.10),
-            min(ec * 1.40, 0.08),
-            min(ec * 1.20, 0.06),
-            min(ec * 1.05, 0.04),
+            min(max(ec * 1.80, 0.06), 0.12),
+            min(max(ec * 1.50, 0.05), 0.10),
+            min(max(ec * 1.25, 0.04), 0.08),
+            min(max(ec * 1.05, 0.03), 0.06),
             tgr,
         ]
         bear_note = "저성장 — 경기 침체·구조적 성장 한계 시나리오"
+        base_note = "저성장 — 현재 성장률 유지·안정 수렴 기준 시나리오"
         bull_note = "저성장 — 신사업·수출 확대 회복 시나리오"
 
     elif profile == "negative_growth_recovery":
         bear_g = [
             ec,
-            ec * 0.60,
-            max(ec * 0.30, -0.05),
-            0.0,
+            ec * 0.75,
+            ec * 0.50,
+            0.00,
+            tgr,
+        ]
+        base_g = [
+            ec * 0.50,
+            0.00,
+            tgr,
+            tgr,
             tgr,
         ]
         bull_g = [
-            ec * 0.30,
-            0.0,
+            0.00,
             tgr,
-            min(tgr * 2, 0.04),
+            tgr * 1.5,
+            tgr * 1.5,
             tgr,
         ]
         bear_note = "역성장 — 구조적 침체 지속·회복 지연 시나리오"
+        base_note = "역성장 — 완만한 회복 기준 시나리오"
         bull_note = "역성장 — 빠른 회복·사업 전환 성공 시나리오"
 
     else:  # insufficient_data
         bear_g = [max(tgr, 0.015)] * 5
+        base_g = [0.05, 0.04, 0.03, 0.02, tgr]
         bull_g = [0.08, 0.07, 0.06, 0.05, tgr]
         bear_note = "데이터 부족 — 보수적 기본값 시나리오"
+        base_note = "데이터 부족 — 중간 기본값 시나리오"
         bull_note = "데이터 부족 — 낙관적 기본값 시나리오"
 
     return {
@@ -403,7 +443,7 @@ def generate_growth_scenarios(
         "base": {
             "label":        "Base",
             "growth_rates": [round(g, 4) for g in base_g],
-            "note":         growth_profile.get("note", "기준 성장률 시나리오"),
+            "note":         base_note,
         },
         "bull": {
             "label":        "Bull",
@@ -1003,6 +1043,10 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
         }
 
     # ── 5개년 추정 (연도별 성장률 있으면 2-Stage, 없으면 단일값 fallback) ──
+    # maintenance_capex_multiplier: Bear=1.20, Base=1.00, Bull=0.85
+    # D&A 있을 때: FCF = NOPAT + D&A - maintenance_CAPEX - ΔWC
+    # D&A 없을 때(CFO): FCF = CFO_margin × revenue (total CAPEX 이미 반영)
+    maint_mult   = assumptions.get("maintenance_capex_multiplier", 1.00)
     projection: dict[int, dict] = {}
     cumulative_discount = 1.0
     pv_fcf_sum  = 0.0
@@ -1013,19 +1057,24 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
         revenue  = prev_revenue * (1 + g_i)
 
         if use_cfo_method:
-            fcf       = revenue * fcf_margin
-            op_profit = revenue * op_margin
-            nopat     = op_profit * (1 - tax_rate)
-            dep       = None
-            capex     = revenue * cap_r
-            delta_wc  = 0.0
+            # CFO 방식: D&A 없으므로 maintenance/growth 분리 불가 → total 사용
+            fcf         = revenue * fcf_margin
+            op_profit   = revenue * op_margin
+            nopat       = op_profit * (1 - tax_rate)
+            dep         = None
+            total_capex      = revenue * cap_r
+            maintenance_capex = total_capex
+            growth_capex      = 0.0
+            delta_wc    = 0.0
         else:
-            op_profit = revenue * op_margin
-            nopat     = op_profit * (1 - tax_rate)
-            dep       = revenue * dep_r
-            capex     = revenue * cap_r
-            delta_wc  = (revenue - prev_revenue) * wc_r
-            fcf       = nopat + dep - capex - delta_wc
+            op_profit   = revenue * op_margin
+            nopat       = op_profit * (1 - tax_rate)
+            dep         = revenue * dep_r
+            total_capex       = revenue * cap_r
+            maintenance_capex = min(total_capex, dep * maint_mult)
+            growth_capex      = max(0.0, total_capex - maintenance_capex)
+            delta_wc    = (revenue - prev_revenue) * wc_r
+            fcf         = nopat + dep - maintenance_capex - delta_wc
 
         cumulative_discount *= (1 + wacc)
         pv_fcf     = fcf / cumulative_discount
@@ -1037,7 +1086,9 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
             "operating_profit":          round(op_profit, 1),
             "nopat":                     round(nopat, 1),
             "depreciation":              round(dep, 1) if dep is not None else None,
-            "capex":                     round(capex, 1),
+            "total_capex":               round(total_capex, 1),
+            "maintenance_capex":         round(maintenance_capex, 1),
+            "growth_capex":              round(growth_capex, 1),
             "change_in_working_capital": round(delta_wc, 1),
             "fcf":                       round(fcf, 1),
             "pv_fcf":                    round(pv_fcf, 1),
@@ -1119,9 +1170,12 @@ def calculate_dcf_scenarios(dcf_inputs: dict, base_assumptions: dict) -> dict:
     Bear / Base / Bull 세 시나리오 DCF 계산.
 
     시나리오별 차등 가정:
-      - 성장률: generate_growth_scenarios()로 프로파일 기반 자동 생성
-      - 영업이익률: Bear -2pp / Base 기준값 / Bull +2pp
-      - 할인율: Bear +1.5pp / Base 기준값 / Bull -1.5pp (6%~18% 클램핑)
+      - 성장률: generate_growth_scenarios()로 프로파일 기반 자동 생성 (Base 독립 계산)
+      - 영업이익률: Bear ×0.85 / Base 기준값 / Bull ×1.15 (배율 방식)
+      - 할인율: CAPM 있을 때 Bear max(0.09, capm+1.5pp) / Base max(0.075, min(0.09, capm)) / Bull max(0.065, capm-1pp)
+               CAPM 없을 때 Bear 10% / Base 9% / Bull 8%
+      - TGR:   고성장/중성장 Bull 2.5%, 나머지 Bear 1.0% / Base 1.5% / Bull 2.0%
+      - maintenance_capex_multiplier: Bear 1.20 / Base 1.00 / Bull 0.85
 
     base_assumptions는 변경하지 않음 (내부에서 복사본 사용).
     """
@@ -1129,69 +1183,100 @@ def calculate_dcf_scenarios(dcf_inputs: dict, base_assumptions: dict) -> dict:
     mm      = dcf_inputs.get("market_metrics", {})
 
     growth_profile = classify_growth_profile(income)
-    scenarios_g    = generate_growth_scenarios(growth_profile)
+    base_tgr       = base_assumptions.get("terminal_growth_rate", 0.015)
+    scenarios_g    = generate_growth_scenarios(growth_profile, terminal_growth_rate=base_tgr)
 
     current_price = mm.get("current_price")
-    base_dr       = base_assumptions.get("discount_rate", 0.09)
     base_margin   = base_assumptions.get("operating_margin", 0.10)
+    capm_dr       = base_assumptions.get("capm_discount_rate")
 
-    _DR_MIN, _DR_MAX = 0.06, 0.18
+    _DR_MIN, _DR_MAX = 0.065, 0.18
+    profile = growth_profile.get("profile", "moderate_growth_convergence")
+
+    # ── 시나리오별 할인율 ──────────────────────────────────────────────────
+    # bear > base > bull 순서 보장: bear/bull은 항상 base 기준으로 spread
+    if capm_dr:
+        base_dr = round(min(_DR_MAX, max(_DR_MIN, capm_dr)), 4)
+        bear_dr = round(min(_DR_MAX, base_dr + 0.015), 4)
+        bull_dr = round(max(_DR_MIN, base_dr - 0.010), 4)
+    else:
+        bear_dr, base_dr, bull_dr = 0.10, 0.09, 0.08
+
+    # ── 시나리오별 OPM (배율 방식) ────────────────────────────────────────
+    bear_margin = round(max(0.0, base_margin * 0.85), 4)
+    bull_margin = round(min(0.40, base_margin * 1.15), 4)
+
+    # ── 시나리오별 Terminal Growth Rate ───────────────────────────────────
+    if profile in ("high_growth_fade_down", "moderate_growth_convergence"):
+        bear_tgr, s_base_tgr, bull_tgr = 0.010, 0.015, 0.025
+    else:
+        bear_tgr, s_base_tgr, bull_tgr = 0.010, 0.015, 0.020
 
     scenario_params = {
         "bear": {
-            "growth_rates":    scenarios_g["bear"]["growth_rates"],
-            "discount_rate":   round(min(_DR_MAX, base_dr + 0.015), 4),
-            "operating_margin": round(max(0.01, base_margin - 0.02), 4),
-            "label":           "Bear",
-            "note":            scenarios_g["bear"]["note"],
+            "growth_rates":               scenarios_g["bear"]["growth_rates"],
+            "discount_rate":              bear_dr,
+            "operating_margin":           bear_margin,
+            "terminal_growth_rate":       bear_tgr,
+            "maintenance_capex_multiplier": 1.20,
+            "label":                      "Bear",
+            "note":                       scenarios_g["bear"]["note"],
         },
         "base": {
-            "growth_rates":    scenarios_g["base"]["growth_rates"],
-            "discount_rate":   base_dr,
-            "operating_margin": base_margin,
-            "label":           "Base",
-            "note":            scenarios_g["base"]["note"],
+            "growth_rates":               scenarios_g["base"]["growth_rates"],
+            "discount_rate":              base_dr,
+            "operating_margin":           base_margin,
+            "terminal_growth_rate":       s_base_tgr,
+            "maintenance_capex_multiplier": 1.00,
+            "label":                      "Base",
+            "note":                       scenarios_g["base"]["note"],
         },
         "bull": {
-            "growth_rates":    scenarios_g["bull"]["growth_rates"],
-            "discount_rate":   round(max(_DR_MIN, base_dr - 0.015), 4),
-            "operating_margin": round(min(0.60, base_margin + 0.02), 4),
-            "label":           "Bull",
-            "note":            scenarios_g["bull"]["note"],
+            "growth_rates":               scenarios_g["bull"]["growth_rates"],
+            "discount_rate":              bull_dr,
+            "operating_margin":           bull_margin,
+            "terminal_growth_rate":       bull_tgr,
+            "maintenance_capex_multiplier": 0.85,
+            "label":                      "Bull",
+            "note":                       scenarios_g["bull"]["note"],
         },
     }
 
     results: dict[str, dict] = {}
     for key, sp in scenario_params.items():
         asm = dict(base_assumptions)
-        # calculate_dcf가 pop하므로 빈 리스트로 초기화
-        asm["_build_warnings"]     = []
-        asm["revenue_growth_rates"] = sp["growth_rates"]
-        asm["revenue_growth_rate"]  = sp["growth_rates"][0]
-        asm["discount_rate"]        = sp["discount_rate"]
-        asm["operating_margin"]     = sp["operating_margin"]
+        asm["_build_warnings"]              = []
+        asm["revenue_growth_rates"]         = sp["growth_rates"]
+        asm["revenue_growth_rate"]          = sp["growth_rates"][0]
+        asm["discount_rate"]                = sp["discount_rate"]
+        asm["operating_margin"]             = sp["operating_margin"]
+        asm["terminal_growth_rate"]         = sp["terminal_growth_rate"]
+        asm["maintenance_capex_multiplier"] = sp["maintenance_capex_multiplier"]
 
         dcf_res = calculate_dcf(dcf_inputs, asm)
         val     = dcf_res.get("valuation", {})
         vps     = val.get("value_per_share")
 
         gap = None
-        if current_price and vps and vps > 0:
+        if current_price and vps is not None and vps > 0:
             gap = round((vps - current_price) / current_price, 4)
 
         results[key] = {
-            "label":             sp["label"],
-            "growth_rates":      sp["growth_rates"],
-            "discount_rate":     sp["discount_rate"],
-            "operating_margin":  sp["operating_margin"],
-            "enterprise_value":  val.get("enterprise_value"),
-            "equity_value":      val.get("equity_value"),
-            "value_per_share":   vps,
-            "current_price":     current_price,
-            "valuation_gap":     gap,
-            "note":              sp["note"],
-            "warnings":          dcf_res.get("warnings", []),
-            "error":             dcf_res.get("error"),
+            "label":                        sp["label"],
+            "growth_rates":                 sp["growth_rates"],
+            "discount_rate":                sp["discount_rate"],
+            "operating_margin":             sp["operating_margin"],
+            "terminal_growth_rate":         sp["terminal_growth_rate"],
+            "maintenance_capex_multiplier": sp["maintenance_capex_multiplier"],
+            "enterprise_value":             val.get("enterprise_value"),
+            "equity_value":                 val.get("equity_value"),
+            "value_per_share":              vps,
+            "valuation_status":             val.get("valuation_status"),
+            "current_price":                current_price,
+            "valuation_gap":                gap,
+            "note":                         sp["note"],
+            "warnings":                     dcf_res.get("warnings", []),
+            "error":                        dcf_res.get("error"),
         }
 
     return {
@@ -1373,15 +1458,18 @@ if __name__ == "__main__":
     scenario_res = calculate_dcf_scenarios(dcf_inputs, asm_scenario)
     gp = scenario_res["growth_profile"]
     print(f"  성장 프로파일: {gp['profile']}  (CAGR {gp['historical_cagr']:.2%} / 정제 {gp['effective_cagr']:.2%})")
-    print(f"  {'시나리오':<6} | {'성장률(1~5년)':<40} | {'할인율':>6} | {'OPM':>6} | {'주당가치(원)':>12} | {'현재가 대비':>10}")
-    print("  " + "-" * 100)
+    print(f"  {'시나리오':<6} | {'성장률(1~5년)':<40} | {'할인율':>6} | {'OPM':>6} | {'TGR':>5} | {'mCX':>5} | {'주당가치(원)':>12} | {'현재가 대비':>10}")
+    print("  " + "-" * 115)
     for k in ("bear", "base", "bull"):
         s = scenario_res["scenarios"][k]
         rates_str = " ".join(f"{r:.1%}" for r in s["growth_rates"])
         vps_str   = f"{s['value_per_share']:>12,}" if s["value_per_share"] is not None else "         N/A"
         gap_str   = f"{s['valuation_gap']:>+.1%}" if s["valuation_gap"] is not None else "   N/A"
+        stat_str  = f" [{s.get('valuation_status','valid')}]" if s.get("valuation_status") != "valid" else ""
         err_str   = f" ⚠{s['error']}" if s["error"] else ""
-        print(f"  {s['label']:<6} | {rates_str:<40} | {s['discount_rate']:>5.1%} | {s['operating_margin']:>5.1%} | {vps_str} | {gap_str}{err_str}")
+        tgr_str   = f"{s.get('terminal_growth_rate', 0):.1%}"
+        mmt_str   = f"{s.get('maintenance_capex_multiplier', 1.0):.2f}"
+        print(f"  {s['label']:<6} | {rates_str:<40} | {s['discount_rate']:>5.1%} | {s['operating_margin']:>5.1%} | {tgr_str:>4} | {mmt_str:>5} | {vps_str} | {gap_str}{stat_str}{err_str}")
 
     # ── 역 DCF: 시장내재 할인율 ───────────────────────────────────────────
     if current_price:
