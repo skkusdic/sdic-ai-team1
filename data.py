@@ -1287,19 +1287,30 @@ def get_depreciation_from_xbrl_notes(corp_code: str, year: int) -> dict | None:
         return result
 
     # ── 3. XBRL 파싱 + D&A 태그 탐색 ────────────────────────────────────
-    # 탐색 태그: ifrs-full 표준 D&A 태그
-    _TARGET_TAGS = {
-        "DepreciationExpense":                          "depreciation",
-        "AmortisationIntangibleAssetsOtherThanGoodwill": "amortization",
-        "DepreciationRightofuseAssets":                 "roua_depreciation",
-        "ImpairmentLossRecognisedInProfitOrLoss":       "impairment_loss",
+    # 탐색 태그: ifrs-full 표준 D&A 태그 (회사별 사용 태그 다름 — 우선순위 순)
+    # 유형: DepreciationExpense(삼성) > DepreciationPropertyPlantAndEquipment(SK하이닉스)
+    #       > DepreciationAndAmortisationExpense(합산 fallback)
+    # 무형: AmortisationIntangibleAssetsOtherThanGoodwill > AmortisationExpense
+    # CF조정: AdjustmentsForDepreciation... (CF간접법 표시 기업용)
+    _TARGET_TAGS: dict[str, tuple[str, int]] = {
+        # 태그명: (field, 우선순위)  — 숫자 낮을수록 우선
+        "DepreciationExpense":                              ("depreciation",      1),
+        "DepreciationPropertyPlantAndEquipment":            ("depreciation",      2),
+        "DepreciationAndAmortisationExpense":               ("depreciation",      3),  # 합산 fallback
+        "AdjustmentsForDepreciationExpense":                ("depreciation",      4),
+        "AmortisationIntangibleAssetsOtherThanGoodwill":    ("amortization",      1),
+        "AmortisationExpense":                              ("amortization",      2),
+        "AdjustmentsForAmortisationExpense":                ("amortization",      3),
+        "DepreciationRightofuseAssets":                     ("roua_depreciation", 1),
+        "DepreciationOperatingLeaseAssets":                 ("roua_depreciation", 2),
+        "ImpairmentLossRecognisedInProfitOrLoss":           ("impairment_loss",   1),
+        "ImpairmentLossRecognisedInProfitOrLossPropertyPlantAndEquipment": ("impairment_loss", 2),
     }
 
     # 컨텍스트 선택 원칙:
-    # - "CFY{year}" 포함: 당기
-    # - "ConsolidatedMember" 포함: 연결재무제표
-    # - ConsolidatedMember 이후 추가 axis 없음 (after_CM == ""): 세그먼트/분류 없는 총액
-    _year_tag   = f"CFY{year}"
+    # Pass 1: 연결(ConsolidatedMember) + 당기(CFY{year}) + 추가 axis 없음
+    # Pass 2: 연결 없을 경우 개별(SeparateMember) fallback (연결 종속기업 없는 기업)
+    _year_tag = f"CFY{year}"
 
     try:
         root = ET.fromstring(xbrl_data)
@@ -1307,40 +1318,62 @@ def get_depreciation_from_xbrl_notes(corp_code: str, year: int) -> dict | None:
         result["note"] = f"XBRL XML 파싱 실패: {e}"
         return result
 
-    candidates: dict[str, list[int]] = {k: [] for k in _TARGET_TAGS.values()}
-    matched_tags: list[str] = []
+    def _extract_da(root_elem: ET.Element, member_type: str) -> tuple[dict, list[str]]:
+        """member_type: 'ConsolidatedMember' 또는 'SeparateMember'"""
+        cands: dict[str, list[tuple[int, int]]] = {}  # field → [(priority, value)]
+        tags_found: list[str] = []
 
-    for elem in root.iter():
-        local = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
-        if local not in _TARGET_TAGS:
-            continue
-        ctx = elem.get("contextRef", "")
-        val_str = elem.text
-        if val_str is None:
-            continue
+        for elem in root_elem.iter():
+            local = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+            if local not in _TARGET_TAGS:
+                continue
+            ctx = elem.get("contextRef", "")
+            val_str = elem.text
+            if val_str is None:
+                continue
 
-        is_current  = _year_tag in ctx
-        is_consol   = "ConsolidatedMember" in ctx and "SeparateMember" not in ctx
-        after_cm    = ctx.split("ConsolidatedMember")[-1] if "ConsolidatedMember" in ctx else ""
-        is_total_ctx = after_cm == ""  # 추가 axis가 없는 총액 컨텍스트
+            is_current = _year_tag in ctx
+            has_member = member_type in ctx
+            # 반대 member 제외 (SeparateMember 패스면 ConsolidatedMember 제외 등)
+            other = "SeparateMember" if member_type == "ConsolidatedMember" else "ConsolidatedMember"
+            has_other = other in ctx
+            # 총액 컨텍스트: member 이후 추가 axis 없음
+            after_member = ctx.split(member_type)[-1] if member_type in ctx else ""
+            is_total = after_member == ""
 
-        if not (is_current and is_consol and is_total_ctx):
-            continue
+            if not (is_current and has_member and not has_other and is_total):
+                continue
 
-        try:
-            val_eok = int(val_str) // 100_000_000   # 원 → 억원
-        except ValueError:
-            continue
+            try:
+                val_eok = int(val_str) // 100_000_000
+            except ValueError:
+                continue
 
-        field = _TARGET_TAGS[local]
-        candidates[field].append(val_eok)
-        if local not in matched_tags:
-            matched_tags.append(local)
+            field, priority = _TARGET_TAGS[local]
+            cands.setdefault(field, []).append((priority, val_eok))
+            if local not in tags_found:
+                tags_found.append(local)
 
-    # 중복 제거: 같은 field에 동일한 값이 여러 번 나타나면 중복(동일 값 max 선택)
-    for field, vals in candidates.items():
-        if vals:
-            result[field] = max(set(vals), key=vals.count)  # 최빈값 선택
+        # 필드별로 가장 높은 우선순위(낮은 숫자) 값 선택
+        chosen: dict[str, int] = {}
+        for field, pv_list in cands.items():
+            best = min(pv_list, key=lambda x: x[0])
+            chosen[field] = best[1]
+
+        return chosen, tags_found
+
+    # Pass 1: 연결재무제표
+    chosen, matched_tags = _extract_da(root, "ConsolidatedMember")
+    is_separate_fallback = False
+
+    # Pass 2: 연결 없으면 개별재무제표로 재시도
+    if not chosen:
+        chosen, matched_tags = _extract_da(root, "SeparateMember")
+        if chosen:
+            is_separate_fallback = True
+
+    for field, val in chosen.items():
+        result[field] = val
 
     result["matched_tags"] = matched_tags
 
@@ -1360,13 +1393,16 @@ def get_depreciation_from_xbrl_notes(corp_code: str, year: int) -> dict | None:
     else:
         confidence = "low"
 
+    member_label = "개별재무제표(SeparateMember)" if is_separate_fallback else "연결재무제표(ConsolidatedMember)"
     result["confidence"] = confidence
+    result["separate_fallback"] = is_separate_fallback
     result["note"] = (
-        f"XBRL({xbrl_name})에서 D&A 항목을 탐색했습니다. "
-        f"rcept_no={rcept_no}. "
-        f"감가상각비: {dep:,}억, 무형자산상각: {amor:,}억, ROU상각: {roua:,}억. "
-        f"이 값은 PoC 단계이며 get_dcf_inputs() 직접 연결 전 검증 필요. "
-        "CF 직접 추출값이 있으면 CF 값이 우선 적용됩니다."
+        f"XBRL({xbrl_name})에서 D&A 탐색 완료. "
+        f"기준: {member_label}. rcept_no={rcept_no}. "
+        f"매칭 태그: {matched_tags}. "
+        f"감가상각: {dep:,}억, 무형상각: {amor:,}억, ROU상각: {roua:,}억. "
+        "PoC 단계 — get_dcf_inputs() 자동 연결 전 검증 권장. "
+        "CF 직접 추출값 있으면 CF 값 우선 적용."
     )
 
     return result
