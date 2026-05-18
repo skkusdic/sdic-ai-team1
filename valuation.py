@@ -990,34 +990,51 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
 
     # ── Terminal Value & 기업가치 ─────────────────────────────────────────
     fcf5 = projection[5]["fcf"]
+    valuation_status: str = "valid"
+    valuation_note:   str = ""
 
     if fcf5 <= 0:
-        terminal_value = 0.0
-        pv_tv = 0.0
-        warnings.append(
-            f"5년차 FCF({fcf5:,.0f}억)이 0 이하 — Terminal Value를 0으로 처리합니다. "
-            "역성장·고비용 구조가 지속될 경우 청산 가치 또는 채권자 가치 관점으로 해석하세요."
+        terminal_value  = 0.0
+        pv_tv           = 0.0
+        valuation_status = "invalid_negative_fcf"
+        valuation_note  = (
+            f"5년차 FCF({fcf5:,.0f}억)이 음수로 추정되어 Terminal Value가 산출되지 않습니다. "
+            "역성장·고비용 구조가 지속되는 경우 DCF 계속가치 산정이 불안정합니다. "
+            "이 기업은 DCF 단일값보다 시나리오/민감도 또는 상대가치법(PER/PBR)으로 "
+            "보조 해석하는 것이 적절합니다."
         )
+        warnings.append(valuation_note)
     else:
         terminal_value = fcf5 * (1 + tgr) / (wacc - tgr)
-        pv_tv = terminal_value / cumulative_discount
+        pv_tv          = terminal_value / cumulative_discount
 
     enterprise_value = pv_fcf_sum + pv_tv
+
+    if enterprise_value <= 0 and valuation_status == "valid":
+        valuation_status = "invalid_negative_ev"
+        valuation_note   = (
+            f"추정 Enterprise Value({enterprise_value:,.0f}억)이 0 이하입니다. "
+            "최근 FCF 흐름 기준으로 기업가치 산출이 불안정합니다. "
+            "DCF 단일값보다 시나리오/민감도 또는 상대가치법(PER/PBR)으로 보조 해석하세요."
+        )
+        warnings.append(valuation_note)
+
     equity_value = enterprise_value - net_debt
 
+    if equity_value <= 0 and valuation_status == "valid":
+        valuation_status = "invalid_negative_equity"
+        valuation_note   = (
+            f"추정 Enterprise Value({enterprise_value:,.0f}억)이 순차입금({net_debt:,.0f}억)보다 낮아 "
+            f"Equity Value가 음수({equity_value:,.0f}억)입니다. "
+            "채권자 우선 변제 후 주주에게 돌아오는 잔여가치가 없는 구조입니다. "
+            "DCF 단일값보다 시나리오/민감도 또는 상대가치법(PER/PBR)으로 보조 해석하세요."
+        )
+        warnings.append(valuation_note)
+
+    # valuation_status == "valid"일 때만 VPS 산출. 비정상 케이스는 None 반환.
     value_per_share: int | None = None
-    if shares and shares > 0:
-        if equity_value < 0:
-            value_per_share = 0
-            warnings.append(
-                f"추정 Enterprise Value({enterprise_value:,.0f}억)이 순차입금({net_debt:,.0f}억)보다 낮아 "
-                f"Equity Value가 음수({equity_value:,.0f}억)입니다. "
-                "주식의 유한책임 특성상 주당 가치는 0으로 표시합니다. "
-                "채권자 우선 변제 후 주주에게 돌아오는 잔여가치가 없는 구조입니다."
-            )
-        else:
-            # 억원 → 원 변환 후 주식 수로 나눔
-            value_per_share = round(equity_value * 100_000_000 / shares)
+    if shares and shares > 0 and valuation_status == "valid":
+        value_per_share = round(equity_value * 100_000_000 / shares)
 
     return {
         "assumptions": assumptions,
@@ -1030,6 +1047,8 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
             "equity_value":        round(equity_value, 1),
             "shares_outstanding":  shares,
             "value_per_share":     value_per_share,
+            "valuation_status":    valuation_status,
+            "valuation_note":      valuation_note,
         },
         "warnings": warnings,
         "error":    None,
@@ -1128,6 +1147,81 @@ def calculate_dcf_scenarios(dcf_inputs: dict, base_assumptions: dict) -> dict:
     }
 
 
+def diagnose_dcf_inputs(company_name: str) -> dict:
+    """
+    DCF 계산 전 입력값·중간 계산값 전체 진단.
+    음수 주당가치 원인 분류에 사용.
+
+    Returns: 진단 항목 dict (corp_name, fcf_method, valuation_status, ... 포함)
+    """
+    from data import get_dcf_inputs
+
+    dcf_inputs = get_dcf_inputs(company_name)
+    if not dcf_inputs:
+        return {"error": f"{company_name} — 데이터 수집 실패"}
+
+    ci   = dcf_inputs.get("company_info", {})
+    inc  = dcf_inputs.get("income_statement", {})
+    bs   = dcf_inputs.get("balance_sheet", {})
+    cf   = dcf_inputs.get("cash_flow", {})
+    mm   = dcf_inputs.get("market_metrics", {})
+    base_yr = ci.get("base_year", 2024)
+
+    inc_l = inc.get(base_yr, {})
+    bs_l  = bs.get(base_yr, {})
+    cf_l  = cf.get(base_yr, {})
+
+    assumptions = build_default_assumptions(dcf_inputs)
+    result      = calculate_dcf(dcf_inputs, assumptions)
+    val         = result.get("valuation", {})
+    proj        = result.get("projection", {})
+
+    return {
+        "company_name":              company_name,
+        "corp_name":                 ci.get("corp_name"),
+        "stock_code":                ci.get("stock_code"),
+        "current_price":             mm.get("current_price"),
+        # 손익계산서
+        "revenue":                   inc_l.get("revenue"),
+        "operating_profit":          inc_l.get("operating_profit"),
+        "operating_margin":          (
+            round(inc_l["operating_profit"] / inc_l["revenue"], 4)
+            if inc_l.get("revenue") and inc_l.get("operating_profit") is not None
+            else None
+        ),
+        # 현금흐름표
+        "cash_flow_from_operations": cf_l.get("cash_flow_from_operations"),
+        "capex_tangible":            cf_l.get("capex_tangible"),
+        "capex_intangible":          cf_l.get("capex_intangible"),
+        "depreciation_total":        cf_l.get("depreciation_total"),
+        "depreciation":              cf_l.get("depreciation"),
+        "noncash_adjustments":       cf_l.get("noncash_adjustments"),
+        # FCF 계산 방식
+        "fcf_method":                proj.get(1, {}).get("fcf_method"),
+        # 5년 FCF 요약
+        "fcf_by_year":               {yr: p["fcf"] for yr, p in proj.items()},
+        # 대차대조표
+        "total_debt":                (
+            (bs_l.get("short_term_borrowings") or 0) +
+            (bs_l.get("current_portion_of_long_term_debt") or 0) +
+            (bs_l.get("long_term_borrowings") or 0) +
+            (bs_l.get("bonds_payable") or 0)
+        ),
+        "cash":                      bs_l.get("cash_and_cash_equivalents"),
+        "net_debt":                  val.get("net_debt"),
+        "shares_outstanding":        val.get("shares_outstanding"),
+        # 기업가치
+        "terminal_value":            val.get("terminal_value"),
+        "enterprise_value":          val.get("enterprise_value"),
+        "equity_value":              val.get("equity_value"),
+        "value_per_share":           val.get("value_per_share"),
+        "valuation_status":          val.get("valuation_status"),
+        "valuation_note":            val.get("valuation_note"),
+        "warnings":                  result.get("warnings", []),
+        "error":                     result.get("error"),
+    }
+
+
 if __name__ == "__main__":
     import sys
     sys.stdout.reconfigure(encoding="utf-8")
@@ -1176,18 +1270,25 @@ if __name__ == "__main__":
     print(f"  Enterprise Value : {val.get('enterprise_value', 0):,.0f}억원")
     print(f"  순차입금         : {val.get('net_debt', 0):,.0f}억원")
     print(f"  Equity Value     : {val.get('equity_value', 0):,.0f}억원")
-    vps = val.get("value_per_share")
-    print(f"  주당 가치 (DCF)  : {vps:,}원" if vps is not None else "  주당 가치 (DCF)  : None (주식수 없음)")
+    vps    = val.get("value_per_share")
+    v_stat = val.get("valuation_status", "valid")
+    v_note = val.get("valuation_note", "")
+    if vps is not None:
+        print(f"  주당 가치 (DCF)  : {vps:,}원")
+    elif v_stat != "valid":
+        print(f"  주당 가치 (DCF)  : N/A [{v_stat}]")
+        print(f"    └ {v_note}")
+    else:
+        print("  주당 가치 (DCF)  : N/A (주식수 없음)")
 
     # ── 현재 주가 vs DCF 비교 ────────────────────────────────────────────
     mm = dcf_inputs.get("market_metrics", {})
     current_price = mm.get("current_price")
-    if current_price and vps is not None:
-        if vps > 0:
-            ratio = current_price / vps
-            print(f"  현재 주가        : {current_price:,}원  (DCF 대비 {ratio:.2f}배)")
-        else:
-            print(f"  현재 주가        : {current_price:,}원  (DCF VPS=0 — 유한책임 하한)")
+    if current_price and vps is not None and vps > 0:
+        ratio = current_price / vps
+        print(f"  현재 주가        : {current_price:,}원  (DCF 대비 {ratio:.2f}배)")
+    elif current_price:
+        print(f"  현재 주가        : {current_price:,}원  (DCF 산출 부적합 — 상대가치 보조 해석 권장)")
 
     # ── 민감도 분석 (자동 범위) ───────────────────────────────────────────
     print("\n[ 민감도 분석 — 성장률 × 할인율 VPS(원) ]")
