@@ -115,7 +115,16 @@ label, .stTextInput label,
 [data-testid="stRadio"] [role="radiogroup"] label p,
 [data-testid="stRadio"] [role="radiogroup"] label span,
 [data-baseweb="radio"] ~ div,
-[data-baseweb="radio"] + div {
+[data-baseweb="radio"] + div,
+[data-baseweb="radio"][aria-checked="true"] ~ div,
+[data-baseweb="radio"][aria-checked="true"] + div,
+[data-baseweb="radio"] [aria-checked="true"] ~ div,
+[role="radio"][aria-checked="true"] ~ div,
+[role="radio"][aria-checked="true"] + div,
+[data-testid="stRadio"] [aria-checked="true"] ~ div p,
+[data-testid="stRadio"] [aria-checked="true"] ~ div span,
+[data-testid="stRadio"] [aria-checked="true"] + div p,
+[data-testid="stRadio"] [aria-checked="true"] + div span {
     color: #1a1a1a !important;
 }
 [data-baseweb="radio"] [data-checked="true"] > div,
@@ -126,6 +135,14 @@ label, .stTextInput label,
 }
 [data-baseweb="radio"] > div:first-child {
     border-color: #2e7d32 !important;
+}
+/* 선택된 라디오 레이블 배경색 제거 */
+[data-testid="stRadio"] label[data-checked="true"],
+[data-testid="stRadio"] label[aria-checked="true"],
+[data-testid="stRadio"] [aria-checked="true"],
+[data-baseweb="radio"][aria-checked="true"],
+[data-baseweb="radio-group"] [aria-checked="true"] {
+    background-color: transparent !important;
 }
 [data-baseweb="radio"]:hover > div:first-child {
     border-color: #2e7d32 !important;
@@ -243,18 +260,18 @@ hr {
     box-shadow: 0 12px 32px rgba(46,125,50,0.15), 0 4px 10px rgba(0,0,0,0.08) !important;
 }
 .kpi-label {
-    font-size: 14px;
+    font-size: 11px;
     color: #999;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
     margin-bottom: 10px;
 }
 .kpi-value {
-    font-size: 28px;
-    font-weight: 600;
+    font-size: 32px;
+    font-weight: 700;
     color: #1a1a1a;
     margin-bottom: 6px;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
 }
 .kpi-delta {
     font-size: 14px;
@@ -329,19 +346,19 @@ hr {
     background-color: transparent !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab-border"] {
-    background-color: #c8e6c9 !important;
+    background-color: #eeeeee !important;
     height: 1px !important;
 }
 
 [data-testid="stDownloadButton"] > button {
-    background-color: #dcedc8 !important;
+    background-color: #f1f8f1 !important;
     color: #2e7d32 !important;
-    border: 1px solid #aed581 !important;
+    border: 1px solid rgba(46,125,50,0.35) !important;
     font-weight: 500 !important;
 }
 [data-testid="stDownloadButton"] > button:hover {
-    background-color: #c5e1a5 !important;
-    border-color: #8bc34a !important;
+    background-color: #e8f5e9 !important;
+    border-color: #2e7d32 !important;
 }
 
 @keyframes spin {
@@ -981,17 +998,23 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
         # ── 공통 테이블 스타일 헬퍼 ──
         _TBL_STYLES = [
+            # 테이블 전체: 컨테이너 너비 100% 채우기
+            {"selector": "", "props": [
+                ("width", "100%"), ("border-collapse", "collapse"),
+            ]},
             {"selector": "th", "props": [
                 ("background-color", "#2e7d32"), ("color", "#ffffff"),
                 ("font-weight", "600"), ("text-align", "center"),
-                ("padding", "12px 16px"), ("border", "none"),
+                ("padding", "11px 14px"), ("border", "none"),
                 ("font-family", "'Pretendard','Noto Sans KR',sans-serif"),
                 ("letter-spacing", "0.02em"),
+                ("white-space", "nowrap"),  # 헤더 줄바꿈 방지
             ]},
             {"selector": "td", "props": [
-                ("text-align", "center"), ("padding", "10px 16px"),
+                ("text-align", "center"), ("padding", "9px 14px"),
                 ("font-family", "'Pretendard','Noto Sans KR',sans-serif"),
                 ("font-size", "14px"), ("border-bottom", "1px solid #f0f0f0"),
+                ("white-space", "nowrap"),  # 셀 내용 한 줄 유지
             ]},
             {"selector": "tr:nth-child(even) td", "props": [("background-color", "#f9fafb")]},
             {"selector": "tr:hover td", "props": [("background-color", "#e8f5e9")]},
@@ -999,6 +1022,17 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
         def _tbl(df, fmt_dict=None, na_rep="-"):
             s = df.style.format(fmt_dict, na_rep=na_rep) if fmt_dict else df.style
             return s.set_table_styles(_TBL_STYLES).hide(axis="index")
+
+        def _show_tbl(styler):
+            # st.dataframe()은 Arrow 렌더러를 사용해 Pandas Styler CSS를 무시함
+            # → to_html()로 직접 렌더링해야 text-align 등 스타일이 적용됨
+            # width:100% 로 컨테이너(박스 포함) 너비 전체를 채우고, 넘치면 가로 스크롤
+            st.markdown(
+                '<div style="width:100%; overflow-x:auto;">'
+                + styler.to_html()
+                + '</div>',
+                unsafe_allow_html=True,
+            )
 
         # ── 스타일 DataFrame ──
         fmt = "{:,.0f}".format
@@ -1014,7 +1048,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
         with tab1:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size:1.875rem; font-weight:700; color:#1a1a1a; letter-spacing:-0.02em; margin-bottom:16px;'>{company_name} 연도별 재무 현황 (단위: 백만원)</p>", unsafe_allow_html=True)
+            st.markdown(
+                f"<p style='font-size:1.875rem; font-weight:700; color:#1a1a1a; letter-spacing:-0.02em; margin-bottom:4px;'>{company_name} 연도별 재무 현황</p>"
+                f"<p style='font-size:13px; color:#999; margin-bottom:16px;'>단위: 백만원</p>",
+                unsafe_allow_html=True,
+            )
 
             # KPI 카드 4장
             c1, c2, c3, c4 = st.columns(4)
@@ -1027,8 +1065,8 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             with c4:
                 st.markdown(kpi_card(f"영업이익률 ({latest_year})", f"{mg_curr:.1f}%", delta_pp(mg_curr, mg_prev)), unsafe_allow_html=True)
 
-            st.markdown('<div style="margin:32px 0 24px 0; border-top:1px solid #f0f0f0;"></div>', unsafe_allow_html=True)
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            st.markdown('<div style="margin:32px 0 24px 0; height:1px; background:#eeeeee;"></div>', unsafe_allow_html=True)
+            _show_tbl(styled_df)
 
             st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
             # 3지표 추이 막대 차트 — 매출액 꼭짓점 점+선 항상 표시
@@ -1201,7 +1239,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 "margin:0 0 8px 0;'>YoY 성장률</p>",
                 unsafe_allow_html=True,
             )
-            st.dataframe(_tbl(yoy), use_container_width=True, hide_index=True)
+            _show_tbl(_tbl(yoy))
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab2:
@@ -1210,45 +1248,53 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             st.markdown(
                 f"<p style='font-size:1.875rem; font-weight:700; color:#1a1a1a;"
                 f"letter-spacing:-0.02em; margin-bottom:24px;'>"
-                f"{company_name} 사업 분석 보고서</p>",
+                f"{company_name} 사업 내용 분석</p>",
                 unsafe_allow_html=True,
             )
 
             if not analysis:
                 st.info("분석 결과가 없습니다.")
             else:
-                def _body_html(text):
-                    t = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+                def _inline_html(text):
+                    t = _re.sub(r'#+\s*', '', text)
+                    t = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
                     t = _re.sub(r'\*([^*\n]+?)\*', r'<em>\1</em>', t)
+                    return t.strip()
+
+                def _split_sentences(text):
+                    t = _re.sub(r'#+\s*', '', text)
                     lines = [l.strip() for l in t.split('\n') if l.strip()]
-                    return ' '.join(lines)
+                    sentences = []
+                    for line in lines:
+                        if line.startswith('- ') or line.startswith('• '):
+                            sentences.append(line[2:].strip())
+                        else:
+                            # 마침표 뒤 공백으로 문장 분리 (한글/영문 시작 확인)
+                            parts = _re.split(r'(?<=\.)\s+(?=[가-힣A-Za-z])', line)
+                            for part in parts:
+                                if part.strip():
+                                    sentences.append(part.strip())
+                    return [s for s in sentences if s]
 
                 def _parse_sections(text):
-                    # 마크다운 헤더 제거
                     t = _re.sub(r'(?m)^#+\s+.+\n?', '', text.strip()).strip()
-                    # ** / * bold 마커 제거
-                    t = _re.sub(r'\*+([^*\n]+)\*+', r'\1', t)
-
-                    # re.split 으로 "줄 시작 숫자." 패턴에서 분리
-                    # capturing group 으로 번호 유지
+                    t = _re.sub(r'\*+([^*\n]+)\*+', r'\1', t)  # bold 마커 제거 후 파싱
+                    t = _re.sub(r'#+', '', t)
                     raw = _re.split(r'(?m)^(\d+)\.\s+', t)
-                    # raw = ['앞텍스트', '1', '내용1', '2', '내용2', ...]
                     sections = []
                     i = 1
                     while i + 1 < len(raw):
                         num     = raw[i].strip()
                         content = raw[i + 1].strip()
-                        # 첫 줄이 제목, 나머지가 본문
-                        lines = content.split('\n', 1)
-                        first = lines[0].strip()
-                        rest  = lines[1].strip() if len(lines) > 1 else ''
-                        # "제목: 본문" 형태 분리
+                        lines   = content.split('\n', 1)
+                        first   = lines[0].strip()
+                        rest    = lines[1].strip() if len(lines) > 1 else ''
                         if ':' in first:
-                            ci = first.index(':')
+                            ci   = first.index(':')
                             cand = first[:ci].strip()
                             if len(cand) <= 35:
                                 title = cand
-                                body  = (first[ci+1:].strip() + ' ' + rest).strip()
+                                body  = (first[ci+1:].strip() + ('\n' + rest if rest else '')).strip()
                             else:
                                 title, body = first, rest
                         else:
@@ -1259,45 +1305,51 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
                 _sections = _parse_sections(analysis)
 
+                _SENT_BOX = (
+                    'background:#ffffff; border:1px solid #e8e8e8; border-left:3px solid #2e7d32;'
+                    'border-radius:0 8px 8px 0; padding:11px 18px; margin-bottom:6px;'
+                    'box-shadow:0 1px 3px rgba(0,0,0,0.04);'
+                )
+                _SENT_TXT = (
+                    "font-family:'Pretendard','Noto Sans KR',sans-serif;"
+                    'font-size:14.5px; line-height:1.75; color:#333; margin:0; word-break:keep-all;'
+                )
+
+                _SUBTITLE = (
+                    "font-family:'Pretendard','Noto Sans KR',sans-serif;"
+                    "font-size:20px; font-weight:700; color:#1a1a1a; margin:28px 0 10px 0;"
+                )
+
                 if _sections:
+                    _html = ''
+                    _box_idx = 0
                     for _i, (_num, _title, _body) in enumerate(_sections):
-                        _td = f"{_i * 0.12:.2f}s"
-                        st.markdown(f"""
-<div style="background:#ffffff; border:1px solid #e8e8e8; border-radius:14px;
-            padding:26px 30px; margin-bottom:14px;
-            box-shadow:0 2px 10px rgba(0,0,0,0.06);
-            animation:sectionFadeUp 0.4s ease {_td} both;">
-  <div style="display:flex; align-items:flex-start; gap:18px;">
-    <div style="min-width:36px; height:36px; background:#e8f5e9; border-radius:50%;
-                display:flex; align-items:center; justify-content:center;
-                font-family:'Pretendard','Noto Sans KR',sans-serif;
-                font-size:15px; font-weight:700; color:#2e7d32; flex-shrink:0; margin-top:1px;">
-      {_num}
-    </div>
-    <div style="flex:1; min-width:0;">
-      <div style="font-family:'Pretendard','Noto Sans KR',sans-serif;
-                  font-size:17px; font-weight:700; color:#1a1a1a; margin-bottom:10px; line-height:1.4;">
-        {_title}
-      </div>
-      <p style="font-size:15px; line-height:1.85; color:#444; margin:0; word-break:keep-all;">
-        {_body_html(_body)}
-      </p>
-    </div>
-  </div>
-</div>""", unsafe_allow_html=True)
-                else:
-                    _paras = [p.strip() for p in _re.split(r'\n{2,}', analysis.strip()) if p.strip()]
-                    for _pi, _para in enumerate(_paras):
-                        _td = f"{_pi * 0.12:.2f}s"
-                        st.markdown(
-                            f'<div style="background:#ffffff; border:1px solid #e8e8e8; border-radius:14px;'
-                            f'padding:22px 28px; margin-bottom:12px;'
-                            f'box-shadow:0 2px 10px rgba(0,0,0,0.06);'
-                            f'animation:sectionFadeUp 0.4s ease {_td} both;">'
-                            f'<p style="font-size:15px; line-height:1.85; color:#444; margin:0; word-break:keep-all;">'
-                            f'{_body_html(_para)}</p></div>',
-                            unsafe_allow_html=True,
+                        _mt = '28px' if _i > 0 else '4px'
+                        # 소제목 — 다른 탭 소제목과 동일 스타일, 박스 없음
+                        _html += (
+                            f'<p style="{_SUBTITLE} margin-top:{_mt};">'
+                            f'{_num}. {_title}</p>'
                         )
+                        for _sent in _split_sentences(_body):
+                            _td = f"{_box_idx * 0.07:.2f}s"
+                            _html += (
+                                f'<div style="{_SENT_BOX} animation:sectionFadeUp 0.35s ease {_td} both;">'
+                                f'<p style="{_SENT_TXT}">{_inline_html(_sent)}</p></div>'
+                            )
+                            _box_idx += 1
+                    st.markdown(_html, unsafe_allow_html=True)
+                else:
+                    _clean = _re.sub(r'(?m)^#+\s*', '', analysis.strip())
+                    _clean = _re.sub(r'#+', '', _clean)
+                    _sents = _split_sentences(_clean)
+                    _html = ''
+                    for _si, _sent in enumerate(_sents):
+                        _td = f"{_si * 0.07:.2f}s"
+                        _html += (
+                            f'<div style="{_SENT_BOX} animation:sectionFadeUp 0.35s ease {_td} both;">'
+                            f'<p style="{_SENT_TXT}">{_inline_html(_sent)}</p></div>'
+                        )
+                    st.markdown(_html, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab3:
@@ -1388,7 +1440,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         if item.get("error"):
                             st.error(f"실행 오류: {item['error']}")
                         elif item["df"] is not None:
-                            st.dataframe(_tbl(item["df"]), use_container_width=True, hide_index=True)
+                            _show_tbl(_tbl(item["df"]))
 
                     st.markdown("")
 
@@ -1477,7 +1529,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                     st.warning("두 기업 간 공통 연도 데이터가 없습니다.")
                 else:
                     st.markdown(
-                        '<div style="height:1px; background:linear-gradient(90deg,#2e7d32,#81c784,#2e7d32); margin:32px 0 40px 0; border-radius:1px;"></div>',
+                        '<div style="height:1px; background:#eeeeee; margin:32px 0 40px 0;"></div>',
                         unsafe_allow_html=True,
                     )
 
@@ -1504,7 +1556,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                     f'{_metric} (백만원)</p>',
                                     unsafe_allow_html=True,
                                 )
-                                st.dataframe(_mstyled, use_container_width=True, hide_index=True)
+                                _show_tbl(_mstyled)
 
                     # ── 그룹 막대 차트 ──
                     for metric in ["매출액", "영업이익", "순이익"]:
@@ -1930,9 +1982,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         _proj_df = pd.DataFrame(_proj_rows)
                         _fmt_cols = {c: "{:,.0f}" for c in _proj_df.columns if c != "연차"}
                         _proj_styled = _tbl(_proj_df, fmt_dict=_fmt_cols, na_rep="-")
-                        _, _proj_col, _ = st.columns([1, 4, 1])
-                        with _proj_col:
-                            st.dataframe(_proj_styled, use_container_width=True, hide_index=True)
+                        _show_tbl(_proj_styled)
 
                         # ── D5: 민감도 히트맵 ─────────────────────────────────────
                         if _calc_sens is not None:
@@ -2107,9 +2157,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                         "vs 현재가":     f"{_sgap:+.1%}" if _sgap is not None else "-",
                                     })
                                 if _scen_rows:
-                                    _, _stbl_col, _ = st.columns([1, 4, 1])
-                                    with _stbl_col:
-                                        st.dataframe(_tbl(pd.DataFrame(_scen_rows)), use_container_width=True, hide_index=True)
+                                    _show_tbl(_tbl(pd.DataFrame(_scen_rows)))
 
                             except Exception as _e:
                                 st.caption(f"시나리오 분석 로드 실패: {_e}")
@@ -2162,7 +2210,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
         st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
         st.markdown("""
-<div style="height:1px; background:linear-gradient(90deg,#2e7d32,#81c784,#2e7d32); border-radius:1px;"></div>
+<div style="height:1px; background:#eeeeee;"></div>
 """, unsafe_allow_html=True)
         st.markdown('<div class="fade-section">', unsafe_allow_html=True)
         st.markdown(
