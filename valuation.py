@@ -762,6 +762,330 @@ def calculate_sensitivity(
     }
 
 
+# ── ROIC / 신뢰도 분석 ────────────────────────────────────────────────────
+
+def calculate_roic(dcf_inputs: dict, assumptions: dict) -> dict:
+    """
+    연도별 ROIC(투자자본수익률) 계산 및 WACC 스프레드 분석.
+
+    ROIC  = NOPAT / Invested Capital
+    IC    = Total Equity + Net Financial Debt  (IFRS 16 리스부채 제외)
+    NOPAT = 영업이익 × (1 − 유효세율)
+    Spread = ROIC − WACC  (양수 = 가치 창출, 음수 = 가치 파괴)
+
+    Returns:
+        {
+            "roic_by_year": {year: float},
+            "latest_roic":  float | None,
+            "avg_roic":     float | None,
+            "wacc":         float,
+            "spread":       float | None,
+            "verdict":      str,
+            "verdict_note": str,
+            "ic_by_year":   {year: float},   # 억원
+        }
+    """
+    inc     = dcf_inputs.get("income_statement", {})
+    bs      = dcf_inputs.get("balance_sheet", {})
+    wacc    = assumptions.get("discount_rate", 0.09)
+    tax     = assumptions.get("tax_rate", 0.24)
+
+    roic_by_year: dict[int, float] = {}
+    ic_by_year:   dict[int, float] = {}
+
+    for yr in sorted(inc.keys()):
+        inc_y = inc.get(yr, {})
+        bs_y  = bs.get(yr, {})
+
+        op = inc_y.get("operating_profit")
+        if op is None:
+            continue
+
+        total_equity = bs_y.get("total_equity") or 0
+        fin_debt = (
+            (bs_y.get("short_term_borrowings")             or 0) +
+            (bs_y.get("current_portion_of_long_term_debt") or 0) +
+            (bs_y.get("long_term_borrowings")              or 0) +
+            (bs_y.get("bonds_payable")                     or 0)
+        )
+        cash     = bs_y.get("cash_and_cash_equivalents") or 0
+        net_debt = fin_debt - cash
+        ic       = total_equity + net_debt
+
+        if ic <= 0:
+            continue
+
+        nopat = op * (1 - tax)
+        # 단위 통일: op는 백만원, ic도 백만원 → 비율 계산
+        roic_by_year[yr] = round(nopat / ic, 4)
+        ic_by_year[yr]   = round(ic / 100, 1)   # 백만원 → 억원 (표시용)
+
+    if not roic_by_year:
+        return {
+            "roic_by_year": {},
+            "latest_roic":  None,
+            "avg_roic":     None,
+            "wacc":         round(wacc, 4),
+            "spread":       None,
+            "verdict":      "계산 불가",
+            "verdict_note": "투자자본 계산에 필요한 재무제표 데이터가 부족합니다.",
+            "ic_by_year":   {},
+        }
+
+    avg_roic    = sum(roic_by_year.values()) / len(roic_by_year)
+    latest_roic = list(roic_by_year.values())[-1]
+    spread      = avg_roic - wacc
+
+    if spread > 0.05:
+        verdict = "강한 가치 창출"
+        verdict_note = (
+            f"평균 ROIC({avg_roic:.1%})가 WACC({wacc:.1%})를 {spread:.1%}p 상회합니다. "
+            "자본비용을 크게 웃도는 수익을 창출하는 고품질 기업입니다."
+        )
+    elif spread > 0.01:
+        verdict = "가치 창출"
+        verdict_note = (
+            f"평균 ROIC({avg_roic:.1%})가 WACC({wacc:.1%})를 {spread:.1%}p 상회합니다. "
+            "자본비용 이상의 수익을 꾸준히 창출하고 있습니다."
+        )
+    elif spread > -0.01:
+        verdict = "손익분기"
+        verdict_note = (
+            f"평균 ROIC({avg_roic:.1%})와 WACC({wacc:.1%})가 거의 같습니다. "
+            "가치 창출이 제한적이며 경쟁 심화 또는 자본 비효율 가능성이 있습니다."
+        )
+    elif spread > -0.05:
+        verdict = "가치 파괴 (소폭)"
+        verdict_note = (
+            f"평균 ROIC({avg_roic:.1%})가 WACC({wacc:.1%})에 미치지 못합니다. "
+            "자본비용을 회수하지 못하고 있어 장기 지속성에 주의가 필요합니다."
+        )
+    else:
+        verdict = "가치 파괴"
+        verdict_note = (
+            f"평균 ROIC({avg_roic:.1%})가 WACC({wacc:.1%})를 {abs(spread):.1%}p 크게 하회합니다. "
+            "투자자본 대비 수익성이 심각하게 낮습니다."
+        )
+
+    return {
+        "roic_by_year": roic_by_year,
+        "latest_roic":  round(latest_roic, 4),
+        "avg_roic":     round(avg_roic, 4),
+        "wacc":         round(wacc, 4),
+        "spread":       round(spread, 4),
+        "verdict":      verdict,
+        "verdict_note": verdict_note,
+        "ic_by_year":   ic_by_year,
+    }
+
+
+def calculate_dcf_confidence(dcf_inputs: dict, result: dict, assumptions: dict) -> dict:
+    """
+    DCF 결과 신뢰도 점수 (0~100점).
+
+    채점 3개 카테고리:
+    - 데이터 완전성  (30점): D&A 추출 품질, CAPEX 존재, 재무제표 연수
+    - 이익 예측 가능성 (40점): OPM 변동성, 매출 성장 일관성
+    - 모델 품질      (30점): FCF 방법론, WACC 출처
+
+    Returns:
+        {
+            "score":      int (0~100),
+            "grade":      str ("A"/"B"/"C"/"D"),
+            "grade_note": str,
+            "details": [
+                {"category": str, "item": str, "max_pts": int,
+                 "earned_pts": int, "ok": bool, "note": str},
+                ...
+            ],
+        }
+    """
+    import statistics as _st
+
+    inc     = dcf_inputs.get("income_statement", {})
+    cf      = dcf_inputs.get("cash_flow", {})
+    base_yr = dcf_inputs.get("company_info", {}).get("base_year", 2024)
+    cf_l    = cf.get(base_yr, {})
+
+    score   = 0
+    details: list[dict] = []
+
+    # ── 1. 데이터 완전성 (30점) ──────────────────────────────────────────
+    fcf_method = result.get("fcf_method", "")
+
+    # D&A 추출 품질 (10점)
+    if fcf_method == "NOPAT_DA_CAPEX_CF_DIRECT":
+        score += 10
+        details.append({"category": "데이터 완전성", "item": "D&A 직접 추출 (CF 직접)",
+                         "max_pts": 10, "earned_pts": 10, "ok": True,
+                         "note": "현금흐름표에서 D&A를 직접 추출했습니다."})
+    elif fcf_method == "NOPAT_DA_CAPEX_XBRL":
+        score += 7
+        details.append({"category": "데이터 완전성", "item": "D&A XBRL 주석 추출",
+                         "max_pts": 10, "earned_pts": 7, "ok": True,
+                         "note": "XBRL 주석에서 D&A를 fallback 추출했습니다."})
+    else:
+        details.append({"category": "데이터 완전성", "item": "D&A 미추출 (CFO-CAPEX 방식)",
+                         "max_pts": 10, "earned_pts": 0, "ok": False,
+                         "note": "D&A를 분리하지 못해 FCF 정밀도가 낮습니다."})
+
+    # CAPEX 데이터 존재 (10점)
+    has_capex = (
+        cf_l.get("capex_tangible")   is not None or
+        cf_l.get("capex_intangible") is not None
+    )
+    if has_capex:
+        score += 10
+        details.append({"category": "데이터 완전성", "item": "CAPEX 데이터 확보",
+                         "max_pts": 10, "earned_pts": 10, "ok": True,
+                         "note": "유형/무형 CAPEX를 DART에서 직접 확인했습니다."})
+    else:
+        details.append({"category": "데이터 완전성", "item": "CAPEX 데이터 없음",
+                         "max_pts": 10, "earned_pts": 0, "ok": False,
+                         "note": "CAPEX를 추정값(매출 대비 비율)으로 사용했습니다."})
+
+    # 재무제표 연수 (10점)
+    n_rev = len([y for y in inc if inc[y].get("revenue") is not None])
+    if n_rev >= 5:
+        score += 10
+        details.append({"category": "데이터 완전성", "item": f"재무 데이터 {n_rev}개년",
+                         "max_pts": 10, "earned_pts": 10, "ok": True,
+                         "note": "5개년 이상 데이터로 CAGR 신뢰도가 높습니다."})
+    elif n_rev >= 3:
+        score += 5
+        details.append({"category": "데이터 완전성", "item": f"재무 데이터 {n_rev}개년",
+                         "max_pts": 10, "earned_pts": 5, "ok": False,
+                         "note": "최소 기준(3개년)은 충족하나 추세 신뢰도가 제한됩니다."})
+    else:
+        details.append({"category": "데이터 완전성", "item": f"재무 데이터 {n_rev}개년",
+                         "max_pts": 10, "earned_pts": 0, "ok": False,
+                         "note": "데이터가 부족해 CAGR 및 이익률 계산이 불안정합니다."})
+
+    # ── 2. 이익 예측 가능성 (40점) ───────────────────────────────────────
+    # OPM 안정성 (20점)
+    margins = []
+    for yr, d in inc.items():
+        rev = d.get("revenue")
+        op  = d.get("operating_profit")
+        if rev and rev > 0 and op is not None:
+            margins.append(op / rev)
+
+    if len(margins) >= 3:
+        opm_std = _st.stdev(margins)
+        if opm_std < 0.04:
+            score += 20
+            details.append({"category": "이익 예측 가능성", "item": f"OPM 안정 (σ={opm_std:.1%})",
+                             "max_pts": 20, "earned_pts": 20, "ok": True,
+                             "note": "영업이익률 변동이 매우 작아 미래 수익 예측이 용이합니다."})
+        elif opm_std < 0.08:
+            score += 13
+            details.append({"category": "이익 예측 가능성", "item": f"OPM 보통 (σ={opm_std:.1%})",
+                             "max_pts": 20, "earned_pts": 13, "ok": False,
+                             "note": "영업이익률 변동이 다소 있어 예측 불확실성이 존재합니다."})
+        elif opm_std < 0.15:
+            score += 6
+            details.append({"category": "이익 예측 가능성", "item": f"OPM 불안정 (σ={opm_std:.1%})",
+                             "max_pts": 20, "earned_pts": 6, "ok": False,
+                             "note": "영업이익률 변동이 커서 이익률 가정의 불확실성이 높습니다."})
+        else:
+            details.append({"category": "이익 예측 가능성", "item": f"OPM 매우 불안정 (σ={opm_std:.1%})",
+                             "max_pts": 20, "earned_pts": 0, "ok": False,
+                             "note": "영업이익률 변동이 극심해 DCF 이익 가정 신뢰도가 낮습니다."})
+    else:
+        score += 8
+        details.append({"category": "이익 예측 가능성", "item": "OPM 데이터 부족",
+                         "max_pts": 20, "earned_pts": 8, "ok": False,
+                         "note": "OPM 연도가 부족해 안정성 평가가 불가합니다."})
+
+    # 매출 성장 일관성 (20점)
+    revenues = sorted(
+        [(y, inc[y]["revenue"]) for y in inc if inc[y].get("revenue")],
+        key=lambda x: x[0],
+    )
+    if len(revenues) >= 3:
+        yoy = [
+            (revenues[i][1] - revenues[i-1][1]) / revenues[i-1][1]
+            for i in range(1, len(revenues))
+            if revenues[i-1][1] > 0
+        ]
+        rev_std = _st.stdev(yoy) if len(yoy) >= 2 else 0.0
+        if rev_std < 0.10:
+            score += 20
+            details.append({"category": "이익 예측 가능성", "item": f"매출 성장 일관 (σ={rev_std:.1%})",
+                             "max_pts": 20, "earned_pts": 20, "ok": True,
+                             "note": "매출 성장률 변동이 작아 미래 성장률 예측 신뢰도가 높습니다."})
+        elif rev_std < 0.25:
+            score += 12
+            details.append({"category": "이익 예측 가능성", "item": f"매출 성장 보통 (σ={rev_std:.1%})",
+                             "max_pts": 20, "earned_pts": 12, "ok": False,
+                             "note": "매출 성장률 변동이 다소 있습니다."})
+        else:
+            score += 5
+            details.append({"category": "이익 예측 가능성", "item": f"매출 성장 고변동 (σ={rev_std:.1%})",
+                             "max_pts": 20, "earned_pts": 5, "ok": False,
+                             "note": "매출 변동성이 높아 성장률 가정의 불확실성이 큽니다."})
+    else:
+        score += 8
+        details.append({"category": "이익 예측 가능성", "item": "매출 데이터 부족",
+                         "max_pts": 20, "earned_pts": 8, "ok": False,
+                         "note": "매출 연도가 부족해 성장 일관성 평가가 불가합니다."})
+
+    # ── 3. 모델 품질 (30점) ─────────────────────────────────────────────
+    # FCF 방법론 (20점)
+    if fcf_method == "NOPAT_DA_CAPEX_CF_DIRECT":
+        score += 20
+        details.append({"category": "모델 품질", "item": "FCF = NOPAT+D&A−CAPEX (최고신뢰)",
+                         "max_pts": 20, "earned_pts": 20, "ok": True,
+                         "note": "D&A를 직접 분리한 정밀 FCF 계산 방식입니다."})
+    elif fcf_method == "NOPAT_DA_CAPEX_XBRL":
+        score += 14
+        details.append({"category": "모델 품질", "item": "FCF = NOPAT+D&A−CAPEX (XBRL fallback)",
+                         "max_pts": 20, "earned_pts": 14, "ok": True,
+                         "note": "XBRL 주석 D&A를 사용한 준정밀 FCF 방식입니다."})
+    elif fcf_method == "CFO_CAPEX":
+        score += 8
+        details.append({"category": "모델 품질", "item": "FCF = 영업현금흐름−CAPEX",
+                         "max_pts": 20, "earned_pts": 8, "ok": False,
+                         "note": "D&A 미분리로 인해 유지/성장 CAPEX 구분이 불가합니다."})
+    else:
+        details.append({"category": "모델 품질", "item": "FCF = 저신뢰도 proxy",
+                         "max_pts": 20, "earned_pts": 0, "ok": False,
+                         "note": "D&A·CFO 모두 추출 불가 — 결과를 참고값으로만 활용하세요."})
+
+    # WACC 출처 (10점)
+    dr_source = assumptions.get("discount_rate_source", "conservative_default")
+    if dr_source == "full_wacc":
+        score += 10
+        details.append({"category": "모델 품질", "item": "WACC: D/E 가중 정식 계산",
+                         "max_pts": 10, "earned_pts": 10, "ok": True,
+                         "note": "자기자본·타인자본 비중을 반영한 정식 WACC입니다."})
+    elif dr_source == "capm_ke":
+        score += 7
+        details.append({"category": "모델 품질", "item": "WACC: CAPM β 실측 계산",
+                         "max_pts": 10, "earned_pts": 7, "ok": True,
+                         "note": "β를 실제 주가 데이터로 산출한 CAPM 기반 할인율입니다."})
+    else:
+        score += 2
+        details.append({"category": "모델 품질", "item": "WACC: 기본값 사용",
+                         "max_pts": 10, "earned_pts": 2, "ok": False,
+                         "note": "시장 데이터 없어 보수적 기본값(9%)을 사용했습니다."})
+
+    grade = "A" if score >= 80 else "B" if score >= 60 else "C" if score >= 40 else "D"
+    grade_note = {
+        "A": "높은 신뢰도 — 핵심 데이터가 충분히 확보됐습니다.",
+        "B": "보통 신뢰도 — 일부 가정이 불완전하나 참고 가능합니다.",
+        "C": "낮은 신뢰도 — 결과 해석 시 보수적으로 접근하세요.",
+        "D": "매우 낮은 신뢰도 — 단순 방향성 참고값으로만 활용하세요.",
+    }[grade]
+
+    return {
+        "score":      score,
+        "grade":      grade,
+        "grade_note": grade_note,
+        "details":    details,
+    }
+
+
 # ── 핵심 함수 ────────────────────────────────────────────────────────────
 
 def build_default_assumptions(dcf_inputs: dict) -> dict:
