@@ -25,6 +25,22 @@ try:
     from valuation import calculate_dcf_scenarios as _calc_scenarios
 except ImportError:
     _calc_scenarios = None
+try:
+    from valuation import calculate_implied_discount_rate as _calc_implied
+except ImportError:
+    _calc_implied = None
+try:
+    from valuation import calculate_sensitivity as _calc_sens
+except ImportError:
+    _calc_sens = None
+try:
+    from valuation import calculate_roic as _calc_roic
+except ImportError:
+    _calc_roic = None
+try:
+    from valuation import calculate_dcf_confidence as _calc_confidence
+except ImportError:
+    _calc_confidence = None
 
 st.set_page_config(page_title="AI 재무 컨설팅 어시스턴트", layout="wide")
 
@@ -869,6 +885,10 @@ if run:
     else:
         st.session_state.agent_status = {"data": "실행 중", "analysis": "실행 중", "report": "실행 중"}
         st.session_state.final_state = None
+        if st.session_state.get("company") != company_input.strip():
+            for _sk in ["dcf_g_pct", "dcf_m_pct", "dcf_w_pct",
+                        "dcf_tgr_pct", "dcf_tax_pct"]:
+                st.session_state.pop(_sk, None)
 
         with _b2:
             _spin = st.empty()
@@ -1608,8 +1628,28 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                     st.error("DCF 데이터를 불러오지 못했습니다. 기업명을 확인해주세요.")
                 else:
                     assumptions = build_default_assumptions(dcf_inputs)
+                    _current_price = dcf_inputs.get("market_metrics", {}).get("current_price")
 
-                    # ── 슬라이더: 좌우 여백 추가 ──
+                    # ── D1: 사용 가이드 ──────────────────────────────────────────
+                    with st.expander("DCF 밸류에이션이란? (처음이라면 펼쳐보세요)", expanded=False):
+                        st.markdown("""
+**DCF(Discounted Cash Flow)**는 기업이 미래에 창출할 현금을 현재 가치로 환산해 내재가치를 추정하는 방법입니다.
+
+**슬라이더 조정 방법**
+- **매출 성장률**: DART 3개년 CAGR 기반 자동 추정. 낙관/보수 시나리오로 조정해보세요.
+- **영업이익률(OPM)**: 최근 3~5년 평균. 값이 높을수록 주당가치 상승.
+- **할인율(WACC)**: 투자자가 요구하는 최소 수익률. 높을수록 주당가치 하락.
+- **영구성장률(TGR)**: 5년 이후 영구 성장률. 통상 GDP 수준 1~3%. WACC보다 반드시 낮게 설정.
+- **법인세율**: 기본값 실효세율 24%.
+
+**결과 해석**
+- 주당 DCF 가치 > 현재가 → **Upside** (시장이 과소평가 구간일 수 있음)
+- 주당 DCF 가치 < 현재가 → **Downside** (현재가에 고성장 기대 반영된 상태일 수 있음)
+- ROIC > WACC → 자본비용을 초과하는 수익을 창출하는 기업
+- 신뢰도 등급 A~D: 데이터 완전성·예측 가능성·모델 품질 종합 채점
+""")
+
+                    # ── D2: 가정 조정 슬라이더 ──────────────────────────────────
                     st.markdown(
                         "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
                         "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 12px 0;'>가정 조정</p>",
@@ -1617,31 +1657,65 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                     )
                     _sl, _sc, _sr = st.columns([1, 6, 1])
                     with _sc:
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            g = st.slider("매출 성장률", 0.0, 0.3,
-                                          float(assumptions["revenue_growth_rate"]), 0.01,
-                                          format="%.0f%%", key="dcf_g")
-                            margin = st.slider("영업이익률", 0.0, 0.5,
-                                               float(assumptions["operating_margin"]), 0.01,
-                                               format="%.0f%%", key="dcf_m")
-                            wacc = st.slider("할인율 (WACC)", 0.05, 0.2,
-                                             float(assumptions["discount_rate"]), 0.005,
-                                             format="%.1f%%", key="dcf_w")
-                        with col2:
-                            tgr = st.slider("영구성장률", 0.0, 0.05,
-                                            float(assumptions["terminal_growth_rate"]), 0.005,
-                                            format="%.1f%%", key="dcf_tgr")
-                            tax = st.slider("법인세율", 0.1, 0.35,
-                                            float(assumptions["tax_rate"]), 0.01,
-                                            format="%.0f%%", key="dcf_tax")
+                        _sleft, _sright = st.columns([3, 1])
+                        with _sright:
+                            if st.button("DART 기본값 복원", key="reset_sliders",
+                                         help="DART 공시 데이터 기반 자동 추정값으로 초기화"):
+                                for _sk in ["dcf_g_pct", "dcf_m_pct", "dcf_w_pct",
+                                            "dcf_tgr_pct", "dcf_tax_pct"]:
+                                    st.session_state.pop(_sk, None)
+                                st.rerun()
+
+                        _g_def   = min(50, max(0,  int(round(float(assumptions["revenue_growth_rate"]) * 100))))
+                        _m_def   = min(50, max(0,  int(round(float(assumptions["operating_margin"])    * 100))))
+                        _w_def   = min(20, max(5,  int(round(float(assumptions["discount_rate"])       * 100))))
+                        _tgr_def = min(5,  max(0,  int(round(float(assumptions["terminal_growth_rate"]) * 100))))
+                        _tax_def = min(35, max(10, int(round(float(assumptions["tax_rate"])            * 100))))
+
+                        _col1, _col2 = st.columns(2)
+                        with _col1:
+                            g_pct = st.slider("매출 성장률", 0, 50,
+                                              st.session_state.get("dcf_g_pct", _g_def),
+                                              1, format="%d%%", key="dcf_g_pct",
+                                              help="DART 3개년 CAGR 기반 자동 추정")
+                            st.caption(f"DART 기준값: {_g_def}%  |  K뷰티·소비재 평균 5~20%")
+                            g = g_pct / 100
+
+                            m_pct = st.slider("영업이익률 (OPM)", 0, 50,
+                                              st.session_state.get("dcf_m_pct", _m_def),
+                                              1, format="%d%%", key="dcf_m_pct",
+                                              help="최근 3~5년 평균. OPM ↑ → 주당가치 ↑")
+                            st.caption(f"DART 기준값: {_m_def}%  |  영업이익률 ↑ → FCF ↑ → 주당가치 ↑")
+                            margin = m_pct / 100
+
+                            w_pct = st.slider("할인율 (WACC)", 5, 20,
+                                              st.session_state.get("dcf_w_pct", _w_def),
+                                              1, format="%d%%", key="dcf_w_pct",
+                                              help="WACC ↑ → 주당가치 ↓")
+                            st.caption(f"CAPM 기준값: {_w_def}%  |  한국 성장주 통상 8~14%")
+                            wacc = w_pct / 100
+
+                        with _col2:
+                            tgr_pct = st.slider("영구성장률 (TGR)", 0, 5,
+                                                st.session_state.get("dcf_tgr_pct", _tgr_def),
+                                                1, format="%d%%", key="dcf_tgr_pct",
+                                                help="통상 1~3%. WACC보다 낮게 설정 필수")
+                            st.caption(f"DART 기준값: {_tgr_def}%  |  통상 1~3%")
+                            tgr = tgr_pct / 100
+
+                            tax_pct = st.slider("법인세율", 10, 35,
+                                                st.session_state.get("dcf_tax_pct", _tax_def),
+                                                1, format="%d%%", key="dcf_tax_pct",
+                                                help="실효 법인세율. 한국 기준 22~25%")
+                            st.caption(f"DART 기준값: {_tax_def}%  |  NOPAT = 영업이익 × (1 − 세율)")
+                            tax = tax_pct / 100
 
                     assumptions.update({
-                        "revenue_growth_rate": g,
-                        "operating_margin": margin,
-                        "discount_rate": wacc,
+                        "revenue_growth_rate":  g,
+                        "operating_margin":     margin,
+                        "discount_rate":        wacc,
                         "terminal_growth_rate": tgr,
-                        "tax_rate": tax,
+                        "tax_rate":             tax,
                     })
 
                     result = calculate_dcf(dcf_inputs, assumptions)
@@ -1649,28 +1723,83 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                     if result.get("error"):
                         st.error(result["error"])
                     else:
-                        val = result["valuation"]
-                        vps = val.get("value_per_share")
+                        val      = result["valuation"]
+                        vps      = val.get("value_per_share")
                         v_status = val.get("valuation_status", "valid")
                         v_note   = val.get("valuation_note", "")
 
                         if vps is not None:
                             vps_display = f"{vps:,}원"
-                            vps_warning = None
                         elif v_status == "invalid_negative_fcf":
                             vps_display = "N/A (FCF 음수)"
-                            vps_warning = v_note
                         elif v_status == "invalid_negative_ev":
                             vps_display = "N/A (EV 음수)"
-                            vps_warning = None
                         elif v_status == "invalid_negative_equity":
                             vps_display = "N/A (순부채 초과)"
-                            vps_warning = None
                         else:
                             vps_display = "N/A"
-                            vps_warning = None
 
-                        # ── DCF KPI 카드 3개 ──
+                        # ── D3: Upside / Downside 배너 ───────────────────────────
+                        st.markdown('<div style="margin-top:28px;"></div>', unsafe_allow_html=True)
+                        if vps is not None and _current_price and _current_price > 0:
+                            _gap       = (vps - _current_price) / _current_price
+                            _gap_label = "Upside" if _gap >= 0 else "Downside"
+                            _gap_color = "#1b5e20" if _gap >= 0 else "#b71c1c"
+                            _gap_bg    = "#e8f5e9" if _gap >= 0 else "#ffebee"
+                            _, _ban, _ = st.columns([1, 4, 1])
+                            with _ban:
+                                st.markdown(
+                                    f'<div style="display:flex; align-items:center;'
+                                    f'justify-content:space-between; padding:14px 20px;'
+                                    f'border-radius:10px; background:{_gap_bg};'
+                                    f'border:1px solid {_gap_color}44; margin-bottom:12px;">'
+                                    f'<div style="font-size:13px; color:#555;">'
+                                    f'현재가 <strong style="color:#1a1a1a;">{_current_price:,}원</strong>'
+                                    f'&nbsp;→&nbsp;DCF 주당가치'
+                                    f' <strong style="color:#1a1a1a;">{vps:,}원</strong>'
+                                    f'</div>'
+                                    f'<div style="font-size:20px; font-weight:700; color:{_gap_color};">'
+                                    f'{_gap_label} {_gap:+.1%}'
+                                    f'</div></div>',
+                                    unsafe_allow_html=True,
+                                )
+
+                        # ── D3: 성장 프로파일 배지 ───────────────────────────────
+                        _gp_profile = assumptions.get("growth_profile", "")
+                        _gp_note    = assumptions.get("growth_assumption_note", "")
+                        _GP_LABEL = {
+                            "high_growth_fade_down":       "고성장 페이드다운",
+                            "moderate_growth_convergence": "중성장 수렴형",
+                            "low_growth_stable":           "저성장 안정형",
+                            "negative_growth_recovery":    "역성장/회복형",
+                            "insufficient_data":           "데이터 부족",
+                        }
+                        _GP_COLOR = {
+                            "high_growth_fade_down":       "#1565c0",
+                            "moderate_growth_convergence": "#2e7d32",
+                            "low_growth_stable":           "#4caf50",
+                            "negative_growth_recovery":    "#e65100",
+                            "insufficient_data":           "#757575",
+                        }
+                        if _gp_profile in _GP_LABEL:
+                            _gp_clr    = _GP_COLOR[_gp_profile]
+                            _gp_korean = _GP_LABEL[_gp_profile]
+                            _, _gpb, _ = st.columns([1, 4, 1])
+                            with _gpb:
+                                st.markdown(
+                                    f'<div style="display:flex; align-items:center;'
+                                    f'gap:10px; margin-bottom:16px; flex-wrap:wrap;">'
+                                    f'<span style="font-size:12px; color:#888;">DART 자동 분류</span>'
+                                    f'<span style="background:{_gp_clr}18; color:{_gp_clr};'
+                                    f'border:1px solid {_gp_clr}55; border-radius:20px;'
+                                    f'padding:3px 14px; font-size:13px; font-weight:600;">'
+                                    f'{_gp_korean}</span></div>',
+                                    unsafe_allow_html=True,
+                                )
+                                if _gp_note:
+                                    st.caption(_gp_note)
+
+                        # ── KPI 카드 3개 ─────────────────────────────────────────
                         def _dcf_card(label, value):
                             return (
                                 f'<div class="dcf-card">'
@@ -1680,7 +1809,6 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 f'letter-spacing:-0.02em; white-space:nowrap;">{value}</div>'
                                 f'</div>'
                             )
-                        st.markdown('<div style="margin-top:28px;"></div>', unsafe_allow_html=True)
                         _, _dv1, _dv2, _dv3, _ = st.columns([1, 3, 3, 3, 1])
                         with _dv1:
                             st.markdown(_dcf_card("Enterprise Value", f"{val['enterprise_value']:,.0f}억원"), unsafe_allow_html=True)
@@ -1688,12 +1816,81 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             st.markdown(_dcf_card("Equity Value", f"{val['equity_value']:,.0f}억원"), unsafe_allow_html=True)
                         with _dv3:
                             st.markdown(_dcf_card("주당 가치", vps_display), unsafe_allow_html=True)
-                        if vps_warning:
-                            _, _wv, _ = st.columns([1, 3, 1])
-                            with _wv:
-                                st.warning(vps_warning)
 
-                        # ── 5개년 추정 표 ──
+                        # ── D4: 경고 + ROIC + 신뢰도 ────────────────────────────
+                        _build_warns = result.get("warnings") or []
+                        if (v_status == "invalid_negative_fcf" and v_note) or _build_warns:
+                            _, _wv, _ = st.columns([1, 6, 1])
+                            with _wv:
+                                if v_status == "invalid_negative_fcf" and v_note:
+                                    st.warning(v_note)
+                                for _w in _build_warns:
+                                    st.warning(_w)
+
+                        if _calc_roic is not None:
+                            try:
+                                _roic_res    = _calc_roic(dcf_inputs, assumptions)
+                                _latest_roic = _roic_res.get("latest_roic")
+                                _avg_roic    = _roic_res.get("avg_roic")
+                                _roic_wacc   = _roic_res.get("wacc")
+                                _spread      = _roic_res.get("spread")
+                                _verdict     = _roic_res.get("verdict", "")
+                                _verdict_note = _roic_res.get("verdict_note", "")
+                                if _latest_roic is not None and _spread is not None:
+                                    _roic_clr = "#1b5e20" if _spread > 0 else "#b71c1c"
+                                    _roic_bg  = "#e8f5e9" if _spread > 0 else "#ffebee"
+                                    st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
+                                    _, _rban, _ = st.columns([1, 4, 1])
+                                    with _rban:
+                                        st.markdown(
+                                            f'<div style="padding:14px 20px; border-radius:10px;'
+                                            f'background:{_roic_bg}; border:1px solid {_roic_clr}33; margin-bottom:8px;">'
+                                            f'<div style="display:flex; justify-content:space-between;'
+                                            f'align-items:center; margin-bottom:6px;">'
+                                            f'<span style="font-size:13px; font-weight:600; color:{_roic_clr};">ROIC vs WACC</span>'
+                                            f'<span style="font-size:15px; font-weight:700; color:{_roic_clr};">{_verdict}</span>'
+                                            f'</div>'
+                                            f'<div style="display:flex; gap:24px; font-size:13px; color:#555; flex-wrap:wrap;">'
+                                            f'<span>최신 ROIC <strong style="color:#1a1a1a;">{_latest_roic:.1%}</strong></span>'
+                                            f'<span>평균 ROIC <strong style="color:#1a1a1a;">{_avg_roic:.1%}</strong></span>'
+                                            f'<span>WACC <strong style="color:#1a1a1a;">{_roic_wacc:.1%}</strong></span>'
+                                            f'<span>Spread <strong style="color:{_roic_clr};">{_spread:+.1%}</strong></span>'
+                                            f'</div>'
+                                            f'<div style="font-size:12px; color:#666; margin-top:8px;">{_verdict_note}</div>'
+                                            f'</div>',
+                                            unsafe_allow_html=True,
+                                        )
+                            except Exception:
+                                pass
+
+                        if _calc_confidence is not None:
+                            try:
+                                _conf    = _calc_confidence(dcf_inputs, result, assumptions)
+                                _score   = _conf.get("score", 0)
+                                _grade   = _conf.get("grade", "D")
+                                _gn      = _conf.get("grade_note", "")
+                                _details = _conf.get("details", [])
+                                st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+                                _, _cb, _ = st.columns([1, 4, 1])
+                                with _cb:
+                                    with st.expander(f"DCF 신뢰도: {_grade}등급 ({_score}/100점) — {_gn}", expanded=False):
+                                        for _d in _details:
+                                            _ok_icon  = "✓" if _d["ok"] else "✗"
+                                            _ok_color = "#2e7d32" if _d["ok"] else "#dc2626"
+                                            st.markdown(
+                                                f'<div style="display:flex; justify-content:space-between;'
+                                                f'padding:6px 0; border-bottom:1px solid #f0f0f0; font-size:13px;">'
+                                                f'<span style="color:{_ok_color}; font-weight:700; width:16px;">{_ok_icon}</span>'
+                                                f'<span style="flex:1; color:#333; margin-left:8px;">{_d["item"]}</span>'
+                                                f'<span style="color:#888; margin-left:12px;">{_d["earned_pts"]}/{_d["max_pts"]}pt</span>'
+                                                f'</div>'
+                                                f'<div style="font-size:12px; color:#666; padding:4px 0 8px 24px;">{_d["note"]}</div>',
+                                                unsafe_allow_html=True,
+                                            )
+                            except Exception:
+                                pass
+
+                        # ── 5개년 추정 표 ─────────────────────────────────────────
                         st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
                         st.markdown(
                             "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
@@ -1701,30 +1898,25 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             unsafe_allow_html=True,
                         )
                         proj = result["projection"]
-
                         _FCF_METHOD_LABELS = {
                             "NOPAT_DA_CAPEX_CF_DIRECT": "FCF = NOPAT + D&A − 유지CAPEX (CF 직접 추출)",
                             "NOPAT_DA_CAPEX_XBRL":      "FCF = NOPAT + D&A − 유지CAPEX (XBRL fallback)",
                             "CFO_CAPEX":                "FCF = 영업현금흐름 − CAPEX (D&A 추출 불가)",
                             "LOW_CONFIDENCE_PROXY":     "⚠ FCF 신뢰도 낮음 — 참고값으로만 활용",
                         }
-                        _fcf_method = result.get("fcf_method") or (
-                            proj.get(1, {}).get("fcf_method") if proj else None
-                        )
+                        _fcf_method = result.get("fcf_method") or (proj.get(1, {}).get("fcf_method") if proj else None)
                         if _fcf_method and _fcf_method in _FCF_METHOD_LABELS:
                             _, _mc, _ = st.columns([1, 4, 1])
                             with _mc:
-                                _method_text = _FCF_METHOD_LABELS[_fcf_method]
+                                _mt = _FCF_METHOD_LABELS[_fcf_method]
                                 if _fcf_method == "LOW_CONFIDENCE_PROXY":
-                                    st.warning(_method_text)
+                                    st.warning(_mt)
                                 else:
-                                    st.caption(_method_text)
+                                    st.caption(_mt)
 
                         _proj_rows = []
                         for yr, p in proj.items():
-                            _maint = p.get("maintenance_capex")
-                            if _maint is None:
-                                _maint = p.get("capex")
+                            _maint = p.get("maintenance_capex") or p.get("capex")
                             _proj_rows.append({
                                 "연차":           f"{yr}년차",
                                 "매출(억원)":      p["revenue"],
@@ -1738,107 +1930,220 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         _proj_df = pd.DataFrame(_proj_rows)
                         _fmt_cols = {c: "{:,.0f}" for c in _proj_df.columns if c != "연차"}
                         _proj_styled = _tbl(_proj_df, fmt_dict=_fmt_cols, na_rep="-")
-                        _, _tbl, _ = st.columns([1, 4, 1])
-                        with _tbl:
+                        _, _proj_col, _ = st.columns([1, 4, 1])
+                        with _proj_col:
                             st.dataframe(_proj_styled, use_container_width=True, hide_index=True)
 
-                        # ── Bear / Base / Bull 시나리오 ──
+                        # ── D5: 민감도 히트맵 ─────────────────────────────────────
+                        if _calc_sens is not None:
+                            try:
+                                st.markdown('<div style="margin-top:40px;"></div>', unsafe_allow_html=True)
+                                st.markdown(
+                                    "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
+                                    "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 12px 0;'>민감도 분석 (성장률 × 할인율)</p>",
+                                    unsafe_allow_html=True,
+                                )
+                                with st.spinner("민감도 계산 중..."):
+                                    _sens = _calc_sens(dcf_inputs, assumptions)
+                                _s_grs = _sens["growth_rates"]
+                                _s_drs = _sens["discount_rates"]
+                                _s_mat = _sens["matrix"]
+                                _s_z, _s_text = [], []
+                                for _s_dr in _s_drs:
+                                    _s_zr, _s_tr = [], []
+                                    for _s_gr in _s_grs:
+                                        _sv = _s_mat.get(_s_dr, {}).get(_s_gr)
+                                        if _sv is not None and _current_price and _current_price > 0:
+                                            _s_zr.append((_sv - _current_price) / _current_price)
+                                        else:
+                                            _s_zr.append(0.0)
+                                        _s_tr.append(f"{int(_sv):,}" if _sv is not None else "N/A")
+                                    _s_z.append(_s_zr)
+                                    _s_text.append(_s_tr)
+                                _fig_sens = go.Figure(go.Heatmap(
+                                    z=_s_z,
+                                    x=[f"{int(_s_gr * 100)}%" for _s_gr in _s_grs],
+                                    y=[f"{_s_dr:.1%}" for _s_dr in _s_drs],
+                                    text=_s_text,
+                                    texttemplate="%{text}",
+                                    textfont={"size": 11, "color": "#1a1a1a"},
+                                    colorscale=[[0.0,"#b91c1c"],[0.35,"#fca5a5"],[0.5,"#f9fafb"],[0.65,"#86efac"],[1.0,"#15803d"]],
+                                    zmid=0.0, zmin=-0.5, zmax=0.5, showscale=False,
+                                ))
+                                _base_g = assumptions.get("revenue_growth_rate", 0)
+                                _base_w = assumptions.get("discount_rate", 0.09)
+                                _s_gi = min(range(len(_s_grs)), key=lambda i: abs(_s_grs[i] - _base_g))
+                                _s_wi = min(range(len(_s_drs)), key=lambda i: abs(_s_drs[i] - _base_w))
+                                _fig_sens.add_shape(type="rect",
+                                    x0=_s_gi-0.5, x1=_s_gi+0.5, y0=_s_wi-0.5, y1=_s_wi+0.5,
+                                    line=dict(color="#1a1a1a", width=3))
+                                _fig_sens.update_layout(
+                                    height=260, margin=dict(l=60, r=20, t=12, b=52),
+                                    xaxis=dict(title="매출 성장률 (1년차)", side="bottom", tickfont=dict(size=11)),
+                                    yaxis=dict(title="WACC", tickfont=dict(size=11), autorange="reversed"),
+                                    paper_bgcolor="white", plot_bgcolor="white",
+                                )
+                                _, _sh, _ = st.columns([1, 5, 1])
+                                with _sh:
+                                    st.plotly_chart(_fig_sens, use_container_width=True)
+                                _cp_txt = f"현재가 기준 ({_current_price:,}원)" if _current_price else ""
+                                st.caption(f"■ 테두리: 현재 Base 가정 위치  |  {_cp_txt}: 초록=Upside / 빨강=Downside")
+                            except Exception as _se:
+                                st.caption(f"민감도 분석 로드 실패: {_se}")
+
+                        # ── D6: Bear / Base / Bull 시나리오 ───────────────────────
                         if _calc_scenarios is not None:
                             try:
                                 _asm_scen = build_default_assumptions(dcf_inputs)
                                 _scen_res = _calc_scenarios(dcf_inputs, _asm_scen)
-                                st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
+                                _scenarios = _scen_res.get("scenarios", {})
+                                _gp        = _scen_res.get("growth_profile", {})
+                                st.markdown('<div style="margin-top:40px;"></div>', unsafe_allow_html=True)
                                 st.markdown(
                                     "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
-                                    "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 16px 0;'>시나리오 분석</p>",
+                                    "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 12px 0;'>시나리오 분석 (Bear / Base / Bull)</p>",
                                     unsafe_allow_html=True,
                                 )
-                                _SCEN_PAL = {
-                                    "Bear": {"border":"#ef5350","bg":"#fff8f8","text":"#c62828"},
-                                    "Base": {"border":"#2e7d32","bg":"#f1f8e9","text":"#2e7d32"},
-                                    "Bull": {"border":"#1565c0","bg":"#e8f0fe","text":"#1565c0"},
-                                }
-                                _DEFAULT_PAL = {"border":"#9e9e9e","bg":"#fafafa","text":"#616161"}
-                                _current_price = dcf_inputs.get("company_info", {}).get("current_price")
-                                _scen_items = []
-                                for _name, _s in _scen_res.items():
-                                    _sv = _s.get("valuation", {})
-                                    _ss = _sv.get("valuation_status", "valid")
-                                    _svps = _sv.get("value_per_share")
+                                if _gp.get("effective_cagr") is not None:
+                                    st.caption(f"기준 CAGR: {_gp['effective_cagr']:.1%}  |  프로파일: {_gp.get('profile', '')}  |  {_gp.get('note', '')}")
+
+                                _SC_CLR = {"bear":"#dc2626","base":"#2e7d32","bull":"#1565c0"}
+                                _SC_BG  = {"bear":"#fff5f5","base":"#f1f8f0","bull":"#f0f4ff"}
+                                _SC_LBL = {"bear":"Bear","base":"Base","bull":"Bull"}
+                                _sc1, _sc2, _sc3 = st.columns(3)
+                                for _card_col, _skey in zip([_sc1, _sc2, _sc3], ["bear","base","bull"]):
+                                    _s    = _scenarios.get(_skey, {})
+                                    _svps = _s.get("value_per_share")
+                                    _ss   = _s.get("valuation_status", "valid")
+                                    _sgap = _s.get("valuation_gap")
+                                    _sclr = _SC_CLR[_skey]
+                                    _sbg  = _SC_BG[_skey]
+                                    _sgrl = _s.get("growth_rates") or []
+                                    _sg1  = f"{_sgrl[0]:.1%}" if _sgrl else "-"
                                     if _svps is not None:
-                                        _vps_cell = f"{_svps:,}원"
+                                        _svt = f"{_svps:,}원"
                                     elif _ss == "invalid_negative_fcf":
-                                        _vps_cell = "N/A (FCF 음수)"
+                                        _svt = "N/A (FCF 음수)"
                                     elif _ss == "invalid_negative_ev":
-                                        _vps_cell = "N/A (EV 음수)"
+                                        _svt = "N/A (EV 음수)"
                                     elif _ss == "invalid_negative_equity":
-                                        _vps_cell = "N/A (순부채 초과)"
+                                        _svt = "N/A (순부채 초과)"
                                     else:
-                                        _vps_cell = "N/A"
-                                    _sa = _s.get("assumptions", {})
-                                    if _svps and _current_price and _current_price > 0:
-                                        _ud_val = (_svps / _current_price - 1) * 100
-                                        _updown = f"{_ud_val:+.1f}%"
-                                        _ud_color = "#2e7d32" if _ud_val >= 0 else "#ef5350"
+                                        _svt = "N/A"
+                                    _gap_html = ""
+                                    if _sgap is not None:
+                                        _gc2 = "#2e7d32" if _sgap >= 0 else "#dc2626"
+                                        _gap_html = f'<div style="font-size:13px; color:{_gc2}; margin-top:8px;">{"↑" if _sgap>=0 else "↓"} vs 현재가 {_sgap:+.1%}</div>'
+                                    with _card_col:
+                                        st.markdown(
+                                            f'<div style="background:{_sbg}; border:2px solid {_sclr};'
+                                            f'border-radius:12px; padding:24px 16px; text-align:center; margin-bottom:12px;">'
+                                            f'<div style="font-size:13px; color:{_sclr}; font-weight:700;'
+                                            f'letter-spacing:0.06em; text-transform:uppercase; margin-bottom:12px;">{_SC_LBL[_skey]}</div>'
+                                            f'<div style="font-size:22px; font-weight:700; color:#1a1a1a;">{_svt}</div>'
+                                            f'<div style="font-size:12px; color:#666; margin-top:8px;">'
+                                            f'성장률 1년차 {_sg1}  |  WACC {_s.get("discount_rate",0):.1%}</div>'
+                                            f'<div style="font-size:12px; color:#666;">'
+                                            f'OPM {_s.get("operating_margin",0):.1%}  |  TGR {_s.get("terminal_growth_rate",0):.1%}</div>'
+                                            f'{_gap_html}</div>',
+                                            unsafe_allow_html=True,
+                                        )
+
+                                # 범위 바
+                                _vps_vals = {k: _scenarios[k]["value_per_share"] for k in ("bear","base","bull") if _scenarios.get(k,{}).get("value_per_share") is not None}
+                                _s_cur_p  = _scenarios.get("base",{}).get("current_price") or _current_price
+                                if len(_vps_vals) >= 2:
+                                    _rmin = min(_vps_vals.values()) * 0.85
+                                    _rmax = max(_vps_vals.values()) * 1.15
+                                    _fig_rng = go.Figure()
+                                    if "bear" in _vps_vals and "bull" in _vps_vals:
+                                        _fig_rng.add_shape(type="rect", x0=_vps_vals["bear"], x1=_vps_vals["bull"], y0=0.3, y1=0.7, fillcolor="rgba(46,125,50,0.12)", line=dict(width=0))
+                                    for _rk, (_rclr, _rlbl) in {"bear":("#dc2626","Bear"),"base":("#2e7d32","Base"),"bull":("#1565c0","Bull")}.items():
+                                        if _rk in _vps_vals:
+                                            _fig_rng.add_shape(type="line", x0=_vps_vals[_rk], x1=_vps_vals[_rk], y0=0.25, y1=0.75, line=dict(color=_rclr, width=2.5))
+                                            _fig_rng.add_trace(go.Scatter(x=[_vps_vals[_rk]], y=[0.5], mode="markers+text",
+                                                marker=dict(size=14, color=_rclr),
+                                                text=[f"{_rlbl}<br>{_vps_vals[_rk]:,}원"],
+                                                textposition="top center", textfont=dict(size=11, color=_rclr), showlegend=False))
+                                    if _s_cur_p and _s_cur_p > 0:
+                                        _fig_rng.add_shape(type="line", x0=_s_cur_p, x1=_s_cur_p, y0=0.15, y1=0.85, line=dict(color="#f59e0b", width=2, dash="dash"))
+                                        _fig_rng.add_trace(go.Scatter(x=[_s_cur_p], y=[0.5], mode="markers+text",
+                                            marker=dict(size=10, color="#f59e0b", symbol="diamond"),
+                                            text=[f"현재가<br>{_s_cur_p:,}원"],
+                                            textposition="bottom center", textfont=dict(size=11, color="#b45309"), showlegend=False))
+                                    _fig_rng.update_layout(height=200, margin=dict(l=20,r=20,t=10,b=10),
+                                        xaxis=dict(range=[_rmin,_rmax], tickformat=",", ticksuffix="원", title="주당 가치 (원)"),
+                                        yaxis=dict(visible=False, range=[0,1]), paper_bgcolor="white", plot_bgcolor="white")
+                                    _, _rng_col, _ = st.columns([1, 4, 1])
+                                    with _rng_col:
+                                        st.plotly_chart(_fig_rng, use_container_width=True)
+
+                                # 시나리오 상세 표
+                                _scen_rows = []
+                                for _skey in ("bear","base","bull"):
+                                    _s    = _scenarios.get(_skey, {})
+                                    _svps = _s.get("value_per_share")
+                                    _ss   = _s.get("valuation_status", "valid")
+                                    _sgap = _s.get("valuation_gap")
+                                    _sgrl = _s.get("growth_rates") or []
+                                    _grepr = "  /  ".join(f"{r:.0%}" for r in _sgrl) if _sgrl else "-"
+                                    if _svps is not None:
+                                        _svc = f"{_svps:,}원"
+                                    elif _ss == "invalid_negative_fcf":
+                                        _svc = "N/A [FCF 음수]"
+                                    elif _ss == "invalid_negative_ev":
+                                        _svc = "N/A [EV 음수]"
+                                    elif _ss == "invalid_negative_equity":
+                                        _svc = "N/A [순부채 초과]"
                                     else:
-                                        _updown = "-"
-                                        _ud_color = "#9e9e9e"
-                                    _g_list = _sa.get("revenue_growth_rates") or [_sa.get("revenue_growth_rate", 0)] * 5
-                                    _scen_items.append({
-                                        "name": _name,
-                                        "g":    f"{_g_list[0]:.1%}" if _g_list else "-",
-                                        "wacc": f"{_sa.get('discount_rate', 0):.1%}",
-                                        "opm":  f"{_sa.get('operating_margin', 0):.1%}",
-                                        "tgr":  f"{_sa.get('terminal_growth_rate', 0):.1%}",
-                                        "vps":  _vps_cell,
-                                        "ud":   _updown,
-                                        "ud_color": _ud_color,
+                                        _svc = "N/A"
+                                    _scen_rows.append({
+                                        "시나리오":      _SC_LBL[_skey],
+                                        "성장률(1→5년)": _grepr,
+                                        "WACC":          f"{_s.get('discount_rate',0):.1%}",
+                                        "OPM":           f"{_s.get('operating_margin',0):.1%}",
+                                        "TGR":           f"{_s.get('terminal_growth_rate',0):.1%}",
+                                        "주당가치":      _svc,
+                                        "vs 현재가":     f"{_sgap:+.1%}" if _sgap is not None else "-",
                                     })
-                                if _scen_items:
-                                    _sc_cols = st.columns(len(_scen_items))
-                                    for _ci, (_si, _sc) in enumerate(zip(_scen_items, _sc_cols)):
-                                        _pal = _SCEN_PAL.get(_si["name"], _DEFAULT_PAL)
-                                        with _sc:
-                                            st.markdown(f"""
-<div style="background:{_pal['bg']}; border:1px solid {_pal['border']};
-            border-top:4px solid {_pal['border']}; border-radius:12px;
-            padding:24px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-  <div style="font-size:16px; font-weight:700; color:{_pal['text']};
-              margin-bottom:18px; text-align:center; letter-spacing:0.02em;">
-    {_si['name']}
-  </div>
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;">
-    <div style="background:rgba(255,255,255,0.7); border-radius:8px; padding:10px 8px; text-align:center;">
-      <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">성장률</div>
-      <div style="font-size:14px; font-weight:600; color:#1a1a1a;">{_si['g']}</div>
-    </div>
-    <div style="background:rgba(255,255,255,0.7); border-radius:8px; padding:10px 8px; text-align:center;">
-      <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">할인율</div>
-      <div style="font-size:14px; font-weight:600; color:#1a1a1a;">{_si['wacc']}</div>
-    </div>
-    <div style="background:rgba(255,255,255,0.7); border-radius:8px; padding:10px 8px; text-align:center;">
-      <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">OPM</div>
-      <div style="font-size:14px; font-weight:600; color:#1a1a1a;">{_si['opm']}</div>
-    </div>
-    <div style="background:rgba(255,255,255,0.7); border-radius:8px; padding:10px 8px; text-align:center;">
-      <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">TGR</div>
-      <div style="font-size:14px; font-weight:600; color:#1a1a1a;">{_si['tgr']}</div>
-    </div>
-  </div>
-  <div style="border-top:1px solid {_pal['border']}; padding-top:16px; text-align:center;">
-    <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px;">주당 가치</div>
-    <div style="font-size:20px; font-weight:700; color:{_pal['text']}; margin-bottom:5px;">{_si['vps']}</div>
-    <div style="font-size:13px; font-weight:600; color:{_si['ud_color']};">{_si['ud']}</div>
-  </div>
-</div>""", unsafe_allow_html=True)
+                                if _scen_rows:
+                                    _, _stbl_col, _ = st.columns([1, 4, 1])
+                                    with _stbl_col:
+                                        st.dataframe(_tbl(pd.DataFrame(_scen_rows)), use_container_width=True, hide_index=True)
+
                             except Exception as _e:
                                 st.caption(f"시나리오 분석 로드 실패: {_e}")
 
-                        if result.get("warnings"):
-                            _, _wc, _ = st.columns([1, 4, 1])
-                            with _wc:
-                                for w in result["warnings"]:
-                                    st.warning(w)
+                        # ── D7: Reverse DCF ───────────────────────────────────────
+                        if _calc_implied is not None and _current_price and _current_price > 0:
+                            try:
+                                _asm_rev = build_default_assumptions(dcf_inputs)
+                                _imp = _calc_implied(dcf_inputs, _asm_rev, _current_price)
+                                if _imp and _imp.get("implied_discount_rate") is not None:
+                                    _idr   = _imp["implied_discount_rate"]
+                                    _inote = _imp.get("note", "")
+                                    st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
+                                    st.markdown(
+                                        "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
+                                        "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 12px 0;'>Reverse DCF — 시장 내재 할인율</p>",
+                                        unsafe_allow_html=True,
+                                    )
+                                    _, _ib, _ = st.columns([1, 4, 1])
+                                    with _ib:
+                                        _idr_clr = "#1b5e20" if _idr < assumptions["discount_rate"] else "#b71c1c"
+                                        st.markdown(
+                                            f'<div style="padding:16px 20px; border-radius:10px;'
+                                            f'background:#f8f9fa; border:1px solid #e0e0e0;">'
+                                            f'<div style="font-size:13px; color:#555; margin-bottom:8px;">'
+                                            f'현재 주가({_current_price:,}원) 기준 시장 내재 WACC</div>'
+                                            f'<div style="font-size:28px; font-weight:700; color:{_idr_clr}; margin-bottom:10px;">{_idr:.2%}</div>'
+                                            f'<div style="font-size:13px; color:#666; line-height:1.7;">{_inote}</div>'
+                                            f'</div>',
+                                            unsafe_allow_html=True,
+                                        )
+                            except Exception:
+                                pass
+
             st.markdown('</div>', unsafe_allow_html=True)
 
         # ── PDF 다운로드 (탭 밖) ──
