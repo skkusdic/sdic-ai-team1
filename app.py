@@ -1276,11 +1276,22 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                     sentences.append(part.strip())
                     return [s for s in sentences if s]
 
+                _DEFAULT_TITLES = {
+                    "1": "주요 사업 영역",
+                    "2": "핵심 제품·서비스",
+                    "3": "고객 및 시장",
+                    "4": "경쟁 환경",
+                    "5": "성장 전략",
+                    "6": "사업 전략과 재무 성과 연계",
+                    "7": "종합 의견",
+                }
+
                 def _parse_sections(text):
                     t = _re.sub(r'(?m)^#+\s+.+\n?', '', text.strip()).strip()
-                    t = _re.sub(r'\*+([^*\n]+)\*+', r'\1', t)  # bold 마커 제거 후 파싱
+                    t = _re.sub(r'\*+([^*\n]+)\*+', r'\1', t)
                     t = _re.sub(r'#+', '', t)
-                    raw = _re.split(r'(?m)^(\d+)\.\s+', t)
+                    # 들여쓰기 있는 "  1. " 형식도 처리
+                    raw = _re.split(r'(?m)^\s*(\d+)\.\s+', t)
                     sections = []
                     i = 1
                     while i + 1 < len(raw):
@@ -1296,9 +1307,18 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 title = cand
                                 body  = (first[ci+1:].strip() + ('\n' + rest if rest else '')).strip()
                             else:
-                                title, body = first, rest
+                                title = _DEFAULT_TITLES.get(num, f"항목 {num}")
+                                body  = content
                         else:
-                            title, body = first, rest
+                            if len(first) > 40:
+                                title = _DEFAULT_TITLES.get(num, f"항목 {num}")
+                                body  = content
+                            else:
+                                title, body = first, rest
+                        # body가 비어있으면 title을 body로 내리고 기본 제목 사용
+                        if not body.strip() and title:
+                            body  = title
+                            title = _DEFAULT_TITLES.get(num, f"항목 {num}")
                         sections.append((num, title, body))
                         i += 2
                     return sections
@@ -1314,18 +1334,16 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                     "font-family:'Pretendard','Noto Sans KR',sans-serif;"
                     'font-size:14.5px; line-height:1.75; color:#333; margin:0; word-break:keep-all;'
                 )
-
                 _SUBTITLE = (
                     "font-family:'Pretendard','Noto Sans KR',sans-serif;"
                     "font-size:20px; font-weight:700; color:#1a1a1a; margin:28px 0 10px 0;"
                 )
 
-                if _sections:
+                def _render_sections(sections):
                     _html = ''
                     _box_idx = 0
-                    for _i, (_num, _title, _body) in enumerate(_sections):
+                    for _i, (_num, _title, _body) in enumerate(sections):
                         _mt = '28px' if _i > 0 else '4px'
-                        # 소제목 — 다른 탭 소제목과 동일 스타일, 박스 없음
                         _html += (
                             f'<p style="{_SUBTITLE} margin-top:{_mt};">'
                             f'{_num}. {_title}</p>'
@@ -1337,19 +1355,41 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 f'<p style="{_SENT_TXT}">{_inline_html(_sent)}</p></div>'
                             )
                             _box_idx += 1
-                    st.markdown(_html, unsafe_allow_html=True)
+                    return _html
+
+                if _sections:
+                    st.markdown(_render_sections(_sections), unsafe_allow_html=True)
                 else:
+                    # fallback: 번호 섹션 파싱 재시도 (들여쓰기·기타 형식 포함)
                     _clean = _re.sub(r'(?m)^#+\s*', '', analysis.strip())
                     _clean = _re.sub(r'#+', '', _clean)
-                    _sents = _split_sentences(_clean)
-                    _html = ''
-                    for _si, _sent in enumerate(_sents):
-                        _td = f"{_si * 0.07:.2f}s"
-                        _html += (
-                            f'<div style="{_SENT_BOX} animation:sectionFadeUp 0.35s ease {_td} both;">'
-                            f'<p style="{_SENT_TXT}">{_inline_html(_sent)}</p></div>'
-                        )
-                    st.markdown(_html, unsafe_allow_html=True)
+                    _clean = _re.sub(r'\*+([^*\n]+)\*+', r'\1', _clean)
+                    _fb_raw = _re.split(r'(?m)^\s*(\d+)\.\s+', _clean)
+                    if len(_fb_raw) > 2:
+                        # 번호 섹션 발견 → 같은 방식으로 렌더링
+                        _fb_secs = []
+                        _fb_i = 1
+                        while _fb_i + 1 < len(_fb_raw):
+                            _fn = _fb_raw[_fb_i].strip()
+                            _fc = _fb_raw[_fb_i + 1].strip()
+                            _ft = _DEFAULT_TITLES.get(_fn, f"항목 {_fn}")
+                            _fb_secs.append((_fn, _ft, _fc))
+                            _fb_i += 2
+                        st.markdown(_render_sections(_fb_secs), unsafe_allow_html=True)
+                    else:
+                        # 진짜 fallback: 제목성 줄 제외하고 문장 박스만
+                        _sents = [
+                            s for s in _split_sentences(_clean)
+                            if not _re.match(r'^\d+\.', s) and len(s) > 15
+                        ]
+                        _html = ''
+                        for _si, _sent in enumerate(_sents):
+                            _td = f"{_si * 0.07:.2f}s"
+                            _html += (
+                                f'<div style="{_SENT_BOX} animation:sectionFadeUp 0.35s ease {_td} both;">'
+                                f'<p style="{_SENT_TXT}">{_inline_html(_sent)}</p></div>'
+                            )
+                        st.markdown(_html, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab3:
@@ -1798,9 +1838,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             _gap_label = "Upside" if _gap >= 0 else "Downside"
                             _gap_color = "#1b5e20" if _gap >= 0 else "#b71c1c"
                             _gap_bg    = "#e8f5e9" if _gap >= 0 else "#ffebee"
-                            _, _ban, _ = st.columns([1, 4, 1])
-                            with _ban:
-                                st.markdown(
+                            st.markdown(
                                     f'<div style="display:flex; align-items:center;'
                                     f'justify-content:space-between; padding:14px 20px;'
                                     f'border-radius:10px; background:{_gap_bg};'
@@ -1836,20 +1874,18 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         if _gp_profile in _GP_LABEL:
                             _gp_clr    = _GP_COLOR[_gp_profile]
                             _gp_korean = _GP_LABEL[_gp_profile]
-                            _, _gpb, _ = st.columns([1, 4, 1])
-                            with _gpb:
-                                st.markdown(
-                                    f'<div style="display:flex; align-items:center;'
-                                    f'gap:10px; margin-bottom:16px; flex-wrap:wrap;">'
-                                    f'<span style="font-size:12px; color:#888;">DART 자동 분류</span>'
-                                    f'<span style="background:{_gp_clr}18; color:{_gp_clr};'
-                                    f'border:1px solid {_gp_clr}55; border-radius:20px;'
-                                    f'padding:3px 14px; font-size:13px; font-weight:600;">'
-                                    f'{_gp_korean}</span></div>',
-                                    unsafe_allow_html=True,
-                                )
-                                if _gp_note:
-                                    st.caption(_gp_note)
+                            st.markdown(
+                                f'<div style="display:flex; align-items:center;'
+                                f'gap:10px; margin-bottom:16px; flex-wrap:wrap;">'
+                                f'<span style="font-size:12px; color:#888;">DART 자동 분류</span>'
+                                f'<span style="background:{_gp_clr}18; color:{_gp_clr};'
+                                f'border:1px solid {_gp_clr}55; border-radius:20px;'
+                                f'padding:3px 14px; font-size:13px; font-weight:600;">'
+                                f'{_gp_korean}</span></div>',
+                                unsafe_allow_html=True,
+                            )
+                            if _gp_note:
+                                st.caption(_gp_note)
 
                         # ── KPI 카드 3개 ─────────────────────────────────────────
                         def _dcf_card(label, value):
@@ -1861,7 +1897,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 f'letter-spacing:-0.02em; white-space:nowrap;">{value}</div>'
                                 f'</div>'
                             )
-                        _, _dv1, _dv2, _dv3, _ = st.columns([1, 3, 3, 3, 1])
+                        _dv1, _dv2, _dv3 = st.columns(3)
                         with _dv1:
                             st.markdown(_dcf_card("Enterprise Value", f"{val['enterprise_value']:,.0f}억원"), unsafe_allow_html=True)
                         with _dv2:
@@ -1872,12 +1908,10 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         # ── D4: 경고 + ROIC + 신뢰도 ────────────────────────────
                         _build_warns = result.get("warnings") or []
                         if (v_status == "invalid_negative_fcf" and v_note) or _build_warns:
-                            _, _wv, _ = st.columns([1, 6, 1])
-                            with _wv:
-                                if v_status == "invalid_negative_fcf" and v_note:
-                                    st.warning(v_note)
-                                for _w in _build_warns:
-                                    st.warning(_w)
+                            if v_status == "invalid_negative_fcf" and v_note:
+                                st.warning(v_note)
+                            for _w in _build_warns:
+                                st.warning(_w)
 
                         if _calc_roic is not None:
                             try:
@@ -1892,9 +1926,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                     _roic_clr = "#1b5e20" if _spread > 0 else "#b71c1c"
                                     _roic_bg  = "#e8f5e9" if _spread > 0 else "#ffebee"
                                     st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
-                                    _, _rban, _ = st.columns([1, 4, 1])
-                                    with _rban:
-                                        st.markdown(
+                                    st.markdown(
                                             f'<div style="padding:14px 20px; border-radius:10px;'
                                             f'background:{_roic_bg}; border:1px solid {_roic_clr}33; margin-bottom:8px;">'
                                             f'<div style="display:flex; justify-content:space-between;'
@@ -1923,9 +1955,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 _gn      = _conf.get("grade_note", "")
                                 _details = _conf.get("details", [])
                                 st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
-                                _, _cb, _ = st.columns([1, 4, 1])
-                                with _cb:
-                                    with st.expander(f"DCF 신뢰도: {_grade}등급 ({_score}/100점) — {_gn}", expanded=False):
+                                with st.expander(f"DCF 신뢰도: {_grade}등급 ({_score}/100점) — {_gn}", expanded=False):
                                         for _d in _details:
                                             _ok_icon  = "✓" if _d["ok"] else "✗"
                                             _ok_color = "#2e7d32" if _d["ok"] else "#dc2626"
@@ -1958,13 +1988,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         }
                         _fcf_method = result.get("fcf_method") or (proj.get(1, {}).get("fcf_method") if proj else None)
                         if _fcf_method and _fcf_method in _FCF_METHOD_LABELS:
-                            _, _mc, _ = st.columns([1, 4, 1])
-                            with _mc:
-                                _mt = _FCF_METHOD_LABELS[_fcf_method]
-                                if _fcf_method == "LOW_CONFIDENCE_PROXY":
-                                    st.warning(_mt)
-                                else:
-                                    st.caption(_mt)
+                            _mt = _FCF_METHOD_LABELS[_fcf_method]
+                            if _fcf_method == "LOW_CONFIDENCE_PROXY":
+                                st.warning(_mt)
+                            else:
+                                st.caption(_mt)
 
                         _proj_rows = []
                         for yr, p in proj.items():
@@ -2033,9 +2061,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                     yaxis=dict(title="WACC", tickfont=dict(size=11), autorange="reversed"),
                                     paper_bgcolor="white", plot_bgcolor="white",
                                 )
-                                _, _sh, _ = st.columns([1, 5, 1])
-                                with _sh:
-                                    st.plotly_chart(_fig_sens, use_container_width=True)
+                                st.plotly_chart(_fig_sens, use_container_width=True)
                                 _cp_txt = f"현재가 기준 ({_current_price:,}원)" if _current_price else ""
                                 st.caption(f"■ 테두리: 현재 Base 가정 위치  |  {_cp_txt}: 초록=Upside / 빨강=Downside")
                             except Exception as _se:
@@ -2124,9 +2150,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                     _fig_rng.update_layout(height=200, margin=dict(l=20,r=20,t=10,b=10),
                                         xaxis=dict(range=[_rmin,_rmax], tickformat=",", ticksuffix="원", title="주당 가치 (원)"),
                                         yaxis=dict(visible=False, range=[0,1]), paper_bgcolor="white", plot_bgcolor="white")
-                                    _, _rng_col, _ = st.columns([1, 4, 1])
-                                    with _rng_col:
-                                        st.plotly_chart(_fig_rng, use_container_width=True)
+                                    st.plotly_chart(_fig_rng, use_container_width=True)
 
                                 # 시나리오 상세 표
                                 _scen_rows = []
@@ -2176,19 +2200,17 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                         "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 12px 0;'>Reverse DCF — 시장 내재 할인율</p>",
                                         unsafe_allow_html=True,
                                     )
-                                    _, _ib, _ = st.columns([1, 4, 1])
-                                    with _ib:
-                                        _idr_clr = "#1b5e20" if _idr < assumptions["discount_rate"] else "#b71c1c"
-                                        st.markdown(
-                                            f'<div style="padding:16px 20px; border-radius:10px;'
-                                            f'background:#f8f9fa; border:1px solid #e0e0e0;">'
-                                            f'<div style="font-size:13px; color:#555; margin-bottom:8px;">'
-                                            f'현재 주가({_current_price:,}원) 기준 시장 내재 WACC</div>'
-                                            f'<div style="font-size:28px; font-weight:700; color:{_idr_clr}; margin-bottom:10px;">{_idr:.2%}</div>'
-                                            f'<div style="font-size:13px; color:#666; line-height:1.7;">{_inote}</div>'
-                                            f'</div>',
-                                            unsafe_allow_html=True,
-                                        )
+                                    _idr_clr = "#1b5e20" if _idr < assumptions["discount_rate"] else "#b71c1c"
+                                    st.markdown(
+                                        f'<div style="padding:16px 20px; border-radius:10px;'
+                                        f'background:#f8f9fa; border:1px solid #e0e0e0;">'
+                                        f'<div style="font-size:13px; color:#555; margin-bottom:8px;">'
+                                        f'현재 주가({_current_price:,}원) 기준 시장 내재 WACC</div>'
+                                        f'<div style="font-size:28px; font-weight:700; color:{_idr_clr}; margin-bottom:10px;">{_idr:.2%}</div>'
+                                        f'<div style="font-size:13px; color:#666; line-height:1.7;">{_inote}</div>'
+                                        f'</div>',
+                                        unsafe_allow_html=True,
+                                    )
                             except Exception:
                                 pass
 
