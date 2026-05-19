@@ -93,6 +93,29 @@ label, .stTextInput label,
     box-shadow: 0 0 0 3px rgba(46,125,50,0.15) !important;
 }
 
+/* 라디오 버튼 레이블 텍스트 — 선택 여부 관계없이 항상 검정 */
+[data-testid="stRadio"] label,
+[data-testid="stRadio"] label *,
+[data-testid="stRadio"] [role="radiogroup"] label p,
+[data-testid="stRadio"] [role="radiogroup"] label span,
+[data-baseweb="radio"] ~ div,
+[data-baseweb="radio"] + div {
+    color: #1a1a1a !important;
+}
+[data-baseweb="radio"] [data-checked="true"] > div,
+[data-baseweb="radio"] input:checked + div,
+[data-baseweb="radio"] [aria-checked="true"] > div:first-child {
+    background-color: #2e7d32 !important;
+    border-color: #2e7d32 !important;
+}
+[data-baseweb="radio"] > div:first-child {
+    border-color: #2e7d32 !important;
+}
+[data-baseweb="radio"]:hover > div:first-child {
+    border-color: #2e7d32 !important;
+    box-shadow: 0 0 0 3px rgba(46,125,50,0.15) !important;
+}
+
 .stButton > button {
     color: #ffffff !important;
     border: none !important;
@@ -109,9 +132,31 @@ label, .stTextInput label,
     background-color: #1b5e20 !important;
 }
 
-[data-testid="stDataFrame"] td,
+[data-testid="stDataFrame"] thead th,
 [data-testid="stDataFrame"] th {
+    background-color: #2e7d32 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
     text-align: center !important;
+    padding: 12px 16px !important;
+    border: none !important;
+    letter-spacing: 0.02em !important;
+    font-family: 'Pretendard','Noto Sans KR',sans-serif !important;
+}
+[data-testid="stDataFrame"] tbody td,
+[data-testid="stDataFrame"] td {
+    text-align: center !important;
+    padding: 10px 16px !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+    color: #1a1a1a !important;
+    font-family: 'Pretendard','Noto Sans KR',sans-serif !important;
+    font-size: 14px !important;
+}
+[data-testid="stDataFrame"] tbody tr:nth-child(even) td {
+    background-color: #f9fafb !important;
+}
+[data-testid="stDataFrame"] tbody tr:hover td {
+    background-color: #e8f5e9 !important;
 }
 
 hr {
@@ -189,7 +234,7 @@ hr {
     margin-bottom: 10px;
 }
 .kpi-value {
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 600;
     color: #1a1a1a;
     margin-bottom: 6px;
@@ -198,6 +243,21 @@ hr {
 .kpi-delta {
     font-size: 14px;
     font-weight: 500;
+}
+.dcf-card {
+    background: #ffffff;
+    border: 1px solid #e8e8e8;
+    border-radius: 12px;
+    padding: 36px 20px;
+    text-align: center;
+    margin-bottom: 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: default;
+}
+.dcf-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(46,125,50,0.15), 0 4px 10px rgba(0,0,0,0.08);
 }
 
 [data-testid="stTabs"] > div:first-child {
@@ -284,7 +344,10 @@ hr {
     animation: headerFadeIn 3.2s cubic-bezier(0.22, 1, 0.36, 1) 1.1s both;
 }
 
-/* 슬라이더 — 주황색 완전 제거, 초록 테마 적용 */
+/* 슬라이더 — 초록 테마 강제 적용 (Streamlit primary-color 변수 재정의 포함) */
+:root, [data-testid="stApp"] {
+    --primary-color: #2e7d32 !important;
+}
 [data-baseweb="slider"] [role="slider"],
 [data-testid="stSlider"] [role="slider"] {
     background-color: #2e7d32 !important;
@@ -299,12 +362,18 @@ hr {
 }
 [data-testid="stSliderTrackActive"],
 [data-testid="stSlider"] [data-testid="stSliderTrackActive"],
+[data-baseweb="slider"] [data-testid="stSliderTrackActive"],
 [data-baseweb="slider"] [class*="TrackActive"],
-[data-baseweb="slider"] [class*="trackActive"] {
-    background: linear-gradient(90deg, #c8e6c9, #1b5e20) !important;
+[data-baseweb="slider"] [class*="trackActive"],
+[data-baseweb="slider"] div[class*="track"] > div:first-child {
+    background: #2e7d32 !important;
+    background-color: #2e7d32 !important;
+    background-image: none !important;
 }
-[data-baseweb="slider"] [class*="Track"]:not([class*="Active"]):not([class*="active"]) {
-    background: #e8f5e9 !important;
+[data-baseweb="slider"] [class*="Track"]:not([class*="Active"]):not([class*="active"]),
+[data-testid="stSlider"] [class*="Track"]:not([data-testid="stSliderTrackActive"]) {
+    background: #c8e6c9 !important;
+    background-color: #c8e6c9 !important;
 }
 
 /* st.warning() 연한 연두색 */
@@ -610,7 +679,9 @@ if _is_startup:
 
 /* ── 제목 3D 바닥 그림자 ── */
 [data-testid="stMain"] h1 {
-    text-shadow: 0 30px 14px rgba(0,0,0,0.65) !important;
+    text-shadow:
+        0 6px 0 rgba(130,130,130,0.45),
+        0 14px 18px rgba(0,0,0,0.2) !important;
 }
 .header-logo img {
     filter: drop-shadow(0 30px 14px rgba(0,0,0,0.42)) !important;
@@ -642,7 +713,7 @@ if _is_startup:
     <h1 class="header-title"
         style="font-size:5.04rem; font-weight:500; margin:0; color:#ffffff;
                font-family:'Pretendard', 'Noto Sans KR', sans-serif;
-               text-shadow:0 2px 16px rgba(0,0,0,0.18);">
+               text-shadow:0 6px 0 rgba(130,130,130,0.45),0 14px 18px rgba(0,0,0,0.2);">
         AI 재무 컨설팅 어시스턴트
     </h1>
 </div>
@@ -888,16 +959,35 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 lambda x: f"{x * 100:+.1f}%" if pd.notna(x) else "—"
             )
 
+        # ── 공통 테이블 스타일 헬퍼 ──
+        _TBL_STYLES = [
+            {"selector": "th", "props": [
+                ("background-color", "#2e7d32"), ("color", "#ffffff"),
+                ("font-weight", "600"), ("text-align", "center"),
+                ("padding", "12px 16px"), ("border", "none"),
+                ("font-family", "'Pretendard','Noto Sans KR',sans-serif"),
+                ("letter-spacing", "0.02em"),
+            ]},
+            {"selector": "td", "props": [
+                ("text-align", "center"), ("padding", "10px 16px"),
+                ("font-family", "'Pretendard','Noto Sans KR',sans-serif"),
+                ("font-size", "14px"), ("border-bottom", "1px solid #f0f0f0"),
+            ]},
+            {"selector": "tr:nth-child(even) td", "props": [("background-color", "#f9fafb")]},
+            {"selector": "tr:hover td", "props": [("background-color", "#e8f5e9")]},
+        ]
+        def _tbl(df, fmt_dict=None, na_rep="-"):
+            s = df.style.format(fmt_dict, na_rep=na_rep) if fmt_dict else df.style
+            return s.set_table_styles(_TBL_STYLES).hide(axis="index")
+
         # ── 스타일 DataFrame ──
         fmt = "{:,.0f}".format
-        styled_df = df.style.format({
+        styled_df = _tbl(df, fmt_dict={
             "매출액 (백만원)":   fmt,
             "영업이익 (백만원)": fmt,
             "순이익 (백만원)":   fmt,
             "영업이익률 (%)":  "{:.1f}".format,
-        }).set_properties(**{"text-align": "center"}).set_table_styles(
-            [{"selector": "th", "props": [("text-align", "center")]}]
-        ).hide(axis="index")
+        })
 
         # ── 탭 ──
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["재무 데이터", "Claude 분석", "AI 질문", "기업 비교", "DCF 밸류에이션"])
@@ -968,7 +1058,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             ]
             fig_trend = go.Figure(data=_bar_traces + _trend_lines)
             fig_trend.update_layout(
-                title=f"{company_name} 매출액 / 영업이익 / 순이익 추이",
+                title=dict(
+                    text=f"{company_name} 매출액 / 영업이익 / 순이익 추이",
+                    font=dict(family="Pretendard, Noto Sans KR, sans-serif", size=20, color="#1a1a1a"),
+                    x=0, xanchor="left",
+                ),
                 barmode="overlay",
                 xaxis=dict(tickmode="array", tickvals=_years, ticktext=[str(y) for y in _years]),
                 yaxis=dict(title="백만원"),
@@ -995,7 +1089,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             )
             fig_margin = go.Figure(data=[_mg_bar, _mg_line])
             fig_margin.update_layout(
-                title=f"{company_name} 영업이익률 추이",
+                title=dict(
+                    text=f"{company_name} 영업이익률 추이",
+                    font=dict(family="Pretendard, Noto Sans KR, sans-serif", size=20, color="#1a1a1a"),
+                    x=0, xanchor="left",
+                ),
                 xaxis=dict(tickmode="array", tickvals=_years, ticktext=[str(y) for y in _years]),
                 yaxis=dict(title="영업이익률 (%)"),
             )
@@ -1077,8 +1175,13 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 """, height=0)
 
             st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
-            st.subheader("YoY 성장률")
-            st.dataframe(yoy, use_container_width=True, hide_index=True)
+            st.markdown(
+                "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
+                "font-size:20px; font-weight:700; color:#1a1a1a;"
+                "margin:0 0 8px 0;'>YoY 성장률</p>",
+                unsafe_allow_html=True,
+            )
+            st.dataframe(_tbl(yoy), use_container_width=True, hide_index=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab2:
@@ -1094,9 +1197,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             if not analysis:
                 st.info("분석 결과가 없습니다.")
             else:
-                def _sentences_html(text):
-                    sents = _re.split(r'(?<=[.?!])\s+', text.strip())
-                    return '<br>'.join(s.strip() for s in sents if s.strip())
+                def _body_html(text):
+                    t = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+                    t = _re.sub(r'\*([^*\n]+?)\*', r'<em>\1</em>', t)
+                    lines = [l.strip() for l in t.split('\n') if l.strip()]
+                    return ' '.join(lines)
 
                 def _parse_sections(text):
                     # 마크다운 헤더 제거
@@ -1136,56 +1241,68 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
                 if _sections:
                     for _i, (_num, _title, _body) in enumerate(_sections):
-                        _td  = f"{_i * 0.13:.2f}s"
-                        _ttd = f"{_i * 0.13 + 0.07:.2f}s"
-                        if _i > 0:
-                            st.markdown(
-                                '<div style="height:1px;background:#e0e0e0;margin:0;"></div>',
-                                unsafe_allow_html=True,
-                            )
+                        _td = f"{_i * 0.12:.2f}s"
                         st.markdown(f"""
-<div style="padding:24px 0 20px 16px; border-left:3px solid #c8e6c9;
+<div style="background:#ffffff; border:1px solid #e8e8e8; border-radius:14px;
+            padding:26px 30px; margin-bottom:14px;
+            box-shadow:0 2px 10px rgba(0,0,0,0.06);
             animation:sectionFadeUp 0.4s ease {_td} both;">
-  <div style="font-size:1rem; font-weight:700; color:#2e7d32; margin-bottom:12px;
-              animation:titleSlideIn 0.35s ease {_ttd} both;">
-    {_num}. {_title}
+  <div style="display:flex; align-items:flex-start; gap:18px;">
+    <div style="min-width:36px; height:36px; background:#e8f5e9; border-radius:50%;
+                display:flex; align-items:center; justify-content:center;
+                font-family:'Pretendard','Noto Sans KR',sans-serif;
+                font-size:15px; font-weight:700; color:#2e7d32; flex-shrink:0; margin-top:1px;">
+      {_num}
+    </div>
+    <div style="flex:1; min-width:0;">
+      <div style="font-family:'Pretendard','Noto Sans KR',sans-serif;
+                  font-size:17px; font-weight:700; color:#1a1a1a; margin-bottom:10px; line-height:1.4;">
+        {_title}
+      </div>
+      <p style="font-size:15px; line-height:1.85; color:#444; margin:0; word-break:keep-all;">
+        {_body_html(_body)}
+      </p>
+    </div>
   </div>
-  <p style="font-size:15px; line-height:1.95; color:#333; margin:0; word-break:keep-all;">
-    {_sentences_html(_body)}
-  </p>
 </div>""", unsafe_allow_html=True)
                 else:
-                    # 번호 섹션이 없는 경우(fallback 분석) — 문단별로 구분
                     _paras = [p.strip() for p in _re.split(r'\n{2,}', analysis.strip()) if p.strip()]
                     for _pi, _para in enumerate(_paras):
-                        if _pi > 0:
-                            st.markdown(
-                                '<div style="height:1px;background:#e0e0e0;margin:0;"></div>',
-                                unsafe_allow_html=True,
-                            )
+                        _td = f"{_pi * 0.12:.2f}s"
                         st.markdown(
-                            f'<div style="padding:20px 0 16px 16px; border-left:3px solid #c8e6c9;">'
-                            f'<p style="font-size:15px;line-height:1.95;color:#333;margin:0;word-break:keep-all;">'
-                            f'{_sentences_html(_para)}</p></div>',
+                            f'<div style="background:#ffffff; border:1px solid #e8e8e8; border-radius:14px;'
+                            f'padding:22px 28px; margin-bottom:12px;'
+                            f'box-shadow:0 2px 10px rgba(0,0,0,0.06);'
+                            f'animation:sectionFadeUp 0.4s ease {_td} both;">'
+                            f'<p style="font-size:15px; line-height:1.85; color:#444; margin:0; word-break:keep-all;">'
+                            f'{_body_html(_para)}</p></div>',
                             unsafe_allow_html=True,
                         )
-                # 디버그 expander (파싱 확인용)
-                with st.expander("🔍 원문 보기 (디버그)", expanded=False):
-                    st.code(analysis, language=None)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab3:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
-            st.subheader(f"{company_name} AI 질문")
+            st.markdown(
+                f"<p style='font-size:1.875rem; font-weight:700; color:#1a1a1a;"
+                f"letter-spacing:-0.02em; margin-bottom:24px;'>"
+                f"{company_name} AI 질문</p>",
+                unsafe_allow_html=True,
+            )
 
             _TEXT2SQL_KEYWORDS = {"평균", "합계", "합", "총", "최대", "최소", "몇", "계산", "비교", "순위", "sum", "avg", "max", "min"}
 
+            st.markdown(
+                "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
+                "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 8px 0;'>질의 모드</p>",
+                unsafe_allow_html=True,
+            )
             mode = st.radio(
                 "질의 모드",
                 ["자동", "RAG", "Text2SQL"],
                 index=["자동", "RAG", "Text2SQL"].index(st.session_state.qa_mode),
                 horizontal=True,
                 key="tab3_mode",
+                label_visibility="collapsed",
             )
             st.session_state.qa_mode = mode
 
@@ -1201,7 +1318,9 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 key="tab3_question",
                 label_visibility="collapsed",
             )
-            ask_btn = st.button("질문하기", key="tab3_ask")
+            _q1, _q2, _q3 = st.columns([2, 1, 2])
+            with _q2:
+                ask_btn = st.button("질문하기", key="tab3_ask", use_container_width=True)
 
             if ask_btn and question.strip():
                 q = question.strip()
@@ -1249,7 +1368,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         if item.get("error"):
                             st.error(f"실행 오류: {item['error']}")
                         elif item["df"] is not None:
-                            st.dataframe(item["df"], use_container_width=True, hide_index=True)
+                            st.dataframe(_tbl(item["df"]), use_container_width=True, hide_index=True)
 
                     st.markdown("")
 
@@ -1263,55 +1382,56 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 unsafe_allow_html=True,
             )
             # ── 기업 선택 카드 레이아웃 ──
-            _card_style = (
-                "background:#ffffff; border:1px solid #e8e8e8; border-radius:12px;"
-                "padding:28px 32px; text-align:center;"
-                "box-shadow:0 6px 20px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);"
-            )
-            _col_l, _col_mid, _col_r = st.columns([5, 1, 5])
-            with _col_l:
-                with st.container(border=True):
+            _pad_l, _center_col, _pad_r = st.columns([1, 2, 1])
+            with _center_col:
+                _col_l, _col_mid, _col_r = st.columns([5, 1, 5])
+                with _col_l:
                     st.markdown(
-                        f'<div style="text-align:center; padding:12px 0 8px 0;">'
-                        f'<div style="font-size:13px; color:#999; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:14px;">비교 기준 기업</div>'
+                        f'<div style="aspect-ratio:4/3; display:flex; flex-direction:column; '
+                        f'justify-content:center; align-items:center; gap:16px; '
+                        f'border:1px solid #e8e8e8; border-radius:12px; '
+                        f'box-shadow:0 6px 20px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);">'
+                        f'<div style="font-size:13px; color:#999; letter-spacing:0.06em; text-transform:uppercase;">비교 기준 기업</div>'
                         f'<div style="font-size:1.6rem; font-weight:700; color:#1a1a1a; letter-spacing:-0.02em;">{company_name}</div>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
-            with _col_mid:
-                st.markdown(
-                    '<div style="display:flex; flex-direction:column; align-items:center; margin-bottom:-32px;">'
-                    '  <div style="padding-top:65px; width:100%;">'
-                    '    <div style="height:2px; background:#e0e0e0;"></div>'
-                    '  </div>'
-                    '  <div style="width:2px; flex:1; min-height:80px; background:#e0e0e0;"></div>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-            with _col_r:
-                with st.container(border=True):
+                with _col_mid:
                     st.markdown(
-                        '<div style="font-size:13px; color:#999; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:12px; padding-top:12px; text-align:center;">비교 대상 기업</div>',
+                        '<div style="display:flex; flex-direction:column; align-items:center; margin-bottom:-56px;">'
+                        '  <div style="padding-top:100px; width:100%;">'
+                        '    <div style="height:2px; background:#e0e0e0;"></div>'
+                        '  </div>'
+                        '  <div style="width:2px; flex:1; min-height:120px; background:#e0e0e0;"></div>'
+                        '</div>',
                         unsafe_allow_html=True,
                     )
-                    _ri_l, _ri_c, _ri_r = st.columns([1, 2, 1])
-                    with _ri_c:
-                        cmp_input = st.text_input(
-                            "",
-                            placeholder="비교할 기업명을 입력해주세요",
-                            key="cmp_company_input",
-                            label_visibility="collapsed",
+                with _col_r:
+                    with st.container(border=True):
+                        st.markdown('<div style="height:55px;"></div>', unsafe_allow_html=True)
+                        st.markdown(
+                            '<div style="font-size:13px; color:#999; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:12px; text-align:center;">비교 대상 기업</div>',
+                            unsafe_allow_html=True,
                         )
+                        _ri_l, _ri_c, _ri_r = st.columns([1, 2, 1])
+                        with _ri_c:
+                            cmp_input = st.text_input(
+                                "",
+                                placeholder="비교할 기업명을 입력해주세요",
+                                key="cmp_company_input",
+                                label_visibility="collapsed",
+                            )
+                        st.markdown('<div style="height:55px;"></div>', unsafe_allow_html=True)
 
-            _btn_l, _btn_c, _btn_r = st.columns([2, 1, 2])
-            with _btn_c:
-                st.markdown(
-                    '<div style="display:flex; justify-content:center; margin-top:-16px; margin-bottom:4px;">'
-                    '<div style="width:2px; height:28px; background:#e0e0e0;"></div>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-                cmp_btn = st.button("비교 조회", key="cmp_btn", use_container_width=True)
+                _btn_l, _btn_c, _btn_r = st.columns([2, 1, 2])
+                with _btn_c:
+                    st.markdown(
+                        '<div style="display:flex; justify-content:center; margin-top:-44px; margin-bottom:4px;">'
+                        '<div style="width:2px; height:52px; background:#e0e0e0;"></div>'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+                    cmp_btn = st.button("비교 조회", key="cmp_btn", use_container_width=True)
 
             if cmp_btn and cmp_input.strip():
                 with st.spinner(f"{cmp_input} 데이터 조회 중..."):
@@ -1354,19 +1474,14 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 cmp_name:     cmp_norm[_y].get(_metric, 0),
                             })
                         _mdf = pd.DataFrame(_rows)
-                        _mstyled = (
-                            _mdf.style
-                            .format({company_name: _fmt, cmp_name: _fmt})
-                            .set_properties(**{"text-align": "center"})
-                            .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
-                            .hide(axis="index")
-                        )
+                        _mstyled = _tbl(_mdf, fmt_dict={company_name: _fmt, cmp_name: _fmt})
                         with _col:
                             with st.container(border=True):
                                 st.markdown(
-                                    f'<div style="font-size:14px; color:#999; letter-spacing:0.06em;'
-                                    f'text-transform:uppercase; margin-bottom:12px; font-weight:500; text-align:center;">'
-                                    f'{_metric} (백만원)</div>',
+                                    f'<p style="font-family:Pretendard,\'Noto Sans KR\',sans-serif;'
+                                    f'font-size:20px; font-weight:700; color:#1a1a1a;'
+                                    f'margin:0 0 12px 0; text-align:center;">'
+                                    f'{_metric} (백만원)</p>',
                                     unsafe_allow_html=True,
                                 )
                                 st.dataframe(_mstyled, use_container_width=True, hide_index=True)
@@ -1390,7 +1505,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             ),
                         ])
                         fig_cmp.update_layout(
-                            title=f"{metric} 비교 (백만원)",
+                            title=dict(
+                                text=f"{metric} 비교 (백만원)",
+                                font=dict(family="Pretendard, Noto Sans KR, sans-serif", size=20, color="#1a1a1a"),
+                                x=0, xanchor="left",
+                            ),
                             barmode="group",
                             xaxis=dict(tickmode="array", tickvals=common_years, ticktext=[str(y) for y in common_years]),
                             yaxis_title="백만원",
@@ -1398,6 +1517,76 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                         )
                         st.plotly_chart(fig_cmp, use_container_width=True)
+
+                    # ── 막대 차트 좌→우 등장 애니메이션 ──
+                    import streamlit.components.v1 as _cmp_comp
+                    _cmp_comp.html("""
+<script>
+(function() {
+    var doc = window.parent.document;
+
+    function prepareBar(chart) {
+        if (chart.dataset.barAnimDone || chart.dataset.lineAnimDone) return;
+        var barsLayer = chart.querySelector('.barlayer');
+        if (!barsLayer) return;
+        var paths = Array.from(barsLayer.querySelectorAll('path'));
+        if (!paths.length) return;
+
+        chart.dataset.barAnimDone = '1';
+
+        // 화면 x 좌표 기준으로 좌→우 정렬
+        paths.sort(function(a, b) {
+            return a.getBoundingClientRect().left - b.getBoundingClientRect().left;
+        });
+
+        // 초기 상태: 바닥에서 찌그러져 보이지 않음
+        paths.forEach(function(p) {
+            p.style.transition = 'none';
+            p.style.transformOrigin = '50% 100%';
+            p.style.transform = 'scaleY(0)';
+            p.style.opacity = '0';
+        });
+
+        new IntersectionObserver(function(entries, obs) {
+            entries.forEach(function(entry) {
+                if (!entry.isIntersecting) return;
+                obs.disconnect();
+                requestAnimationFrame(function() {
+                    requestAnimationFrame(function() {
+                        var n = paths.length;
+                        paths.forEach(function(p, i) {
+                            var delay = (i / Math.max(n - 1, 1)) * 480;
+                            p.style.transition =
+                                'transform 0.75s cubic-bezier(0.34,1.56,0.64,1) ' + delay + 'ms,' +
+                                'opacity 0.35s ease ' + delay + 'ms';
+                            p.style.transform = 'scaleY(1)';
+                            p.style.opacity = '1';
+                        });
+                    });
+                });
+            });
+        }, { threshold: 0.2, root: null }).observe(chart);
+    }
+
+    function scan() {
+        doc.querySelectorAll('.js-plotly-plot').forEach(prepareBar);
+    }
+
+    var attempts = 0;
+    var iv = setInterval(function() {
+        scan();
+        attempts++;
+        if (attempts > 25) clearInterval(iv);
+    }, 400);
+
+    var t = null;
+    new MutationObserver(function() {
+        clearTimeout(t);
+        t = setTimeout(scan, 300);
+    }).observe(doc.body, { childList: true, subtree: true });
+})();
+</script>
+""", height=0)
 
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1421,7 +1610,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                     assumptions = build_default_assumptions(dcf_inputs)
 
                     # ── 슬라이더: 좌우 여백 추가 ──
-                    st.markdown("### 가정 조정")
+                    st.markdown(
+                        "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
+                        "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 12px 0;'>가정 조정</p>",
+                        unsafe_allow_html=True,
+                    )
                     _sl, _sc, _sr = st.columns([1, 6, 1])
                     with _sc:
                         col1, col2 = st.columns(2)
@@ -1480,10 +1673,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         # ── DCF KPI 카드 3개 ──
                         def _dcf_card(label, value):
                             return (
-                                f'<div style="background:#ffffff; border:1px solid #e8e8e8; border-radius:12px;'
-                                f'padding:36px 20px; text-align:center; margin-bottom:12px;'
-                                f'box-shadow:0 6px 20px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);'
-                                f'transition:transform 0.2s ease, box-shadow 0.2s ease; cursor:default;">'
+                                f'<div class="dcf-card">'
                                 f'<div style="font-size:13px; color:#999; letter-spacing:0.06em;'
                                 f'text-transform:uppercase; margin-bottom:14px;">{label}</div>'
                                 f'<div style="font-size:26px; font-weight:600; color:#1a1a1a;'
@@ -1505,7 +1695,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
                         # ── 5개년 추정 표 ──
                         st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
-                        st.markdown("### 5개년 추정")
+                        st.markdown(
+                            "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
+                            "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 12px 0;'>5개년 추정</p>",
+                            unsafe_allow_html=True,
+                        )
                         proj = result["projection"]
 
                         _FCF_METHOD_LABELS = {
@@ -1543,13 +1737,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             })
                         _proj_df = pd.DataFrame(_proj_rows)
                         _fmt_cols = {c: "{:,.0f}" for c in _proj_df.columns if c != "연차"}
-                        _proj_styled = (
-                            _proj_df.style
-                            .format(_fmt_cols, na_rep="-")
-                            .set_properties(**{"text-align": "center"})
-                            .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
-                            .hide(axis="index")
-                        )
+                        _proj_styled = _tbl(_proj_df, fmt_dict=_fmt_cols, na_rep="-")
                         _, _tbl, _ = st.columns([1, 4, 1])
                         with _tbl:
                             st.dataframe(_proj_styled, use_container_width=True, hide_index=True)
@@ -1560,8 +1748,19 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 _asm_scen = build_default_assumptions(dcf_inputs)
                                 _scen_res = _calc_scenarios(dcf_inputs, _asm_scen)
                                 st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
-                                st.markdown("### 시나리오 분석")
-                                _scen_rows = []
+                                st.markdown(
+                                    "<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;"
+                                    "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 16px 0;'>시나리오 분석</p>",
+                                    unsafe_allow_html=True,
+                                )
+                                _SCEN_PAL = {
+                                    "Bear": {"border":"#ef5350","bg":"#fff8f8","text":"#c62828"},
+                                    "Base": {"border":"#2e7d32","bg":"#f1f8e9","text":"#2e7d32"},
+                                    "Bull": {"border":"#1565c0","bg":"#e8f0fe","text":"#1565c0"},
+                                }
+                                _DEFAULT_PAL = {"border":"#9e9e9e","bg":"#fafafa","text":"#616161"}
+                                _current_price = dcf_inputs.get("company_info", {}).get("current_price")
+                                _scen_items = []
                                 for _name, _s in _scen_res.items():
                                     _sv = _s.get("valuation", {})
                                     _ss = _sv.get("valuation_status", "valid")
@@ -1569,42 +1768,69 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                     if _svps is not None:
                                         _vps_cell = f"{_svps:,}원"
                                     elif _ss == "invalid_negative_fcf":
-                                        _vps_cell = "N/A [FCF 음수]"
+                                        _vps_cell = "N/A (FCF 음수)"
                                     elif _ss == "invalid_negative_ev":
-                                        _vps_cell = "N/A [EV 음수]"
+                                        _vps_cell = "N/A (EV 음수)"
                                     elif _ss == "invalid_negative_equity":
-                                        _vps_cell = "N/A [순부채 초과]"
+                                        _vps_cell = "N/A (순부채 초과)"
                                     else:
                                         _vps_cell = "N/A"
                                     _sa = _s.get("assumptions", {})
-                                    _current_price = dcf_inputs.get("company_info", {}).get("current_price")
                                     if _svps and _current_price and _current_price > 0:
-                                        _updown = f"{(_svps / _current_price - 1) * 100:+.1f}%"
+                                        _ud_val = (_svps / _current_price - 1) * 100
+                                        _updown = f"{_ud_val:+.1f}%"
+                                        _ud_color = "#2e7d32" if _ud_val >= 0 else "#ef5350"
                                     else:
                                         _updown = "-"
+                                        _ud_color = "#9e9e9e"
                                     _g_list = _sa.get("revenue_growth_rates") or [_sa.get("revenue_growth_rate", 0)] * 5
-                                    _g_repr = f"{_g_list[0]:.1%}" if _g_list else "-"
-                                    _scen_rows.append({
-                                        "시나리오":       _name,
-                                        "성장률(1~5년)":  _g_repr,
-                                        "할인율":         f"{_sa.get('discount_rate', 0):.1%}",
-                                        "OPM":            f"{_sa.get('operating_margin', 0):.1%}",
-                                        "TGR":            f"{_sa.get('terminal_growth_rate', 0):.1%}",
-                                        "주당가치":       _vps_cell,
-                                        "현재가 대비":    _updown,
+                                    _scen_items.append({
+                                        "name": _name,
+                                        "g":    f"{_g_list[0]:.1%}" if _g_list else "-",
+                                        "wacc": f"{_sa.get('discount_rate', 0):.1%}",
+                                        "opm":  f"{_sa.get('operating_margin', 0):.1%}",
+                                        "tgr":  f"{_sa.get('terminal_growth_rate', 0):.1%}",
+                                        "vps":  _vps_cell,
+                                        "ud":   _updown,
+                                        "ud_color": _ud_color,
                                     })
-                                if _scen_rows:
-                                    _scen_df = pd.DataFrame(_scen_rows)
-                                    _, _stbl, _ = st.columns([1, 4, 1])
-                                    with _stbl:
-                                        st.dataframe(
-                                            _scen_df.style
-                                            .set_properties(**{"text-align": "center"})
-                                            .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
-                                            .hide(axis="index"),
-                                            use_container_width=True,
-                                            hide_index=True,
-                                        )
+                                if _scen_items:
+                                    _sc_cols = st.columns(len(_scen_items))
+                                    for _ci, (_si, _sc) in enumerate(zip(_scen_items, _sc_cols)):
+                                        _pal = _SCEN_PAL.get(_si["name"], _DEFAULT_PAL)
+                                        with _sc:
+                                            st.markdown(f"""
+<div style="background:{_pal['bg']}; border:1px solid {_pal['border']};
+            border-top:4px solid {_pal['border']}; border-radius:12px;
+            padding:24px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+  <div style="font-size:16px; font-weight:700; color:{_pal['text']};
+              margin-bottom:18px; text-align:center; letter-spacing:0.02em;">
+    {_si['name']}
+  </div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;">
+    <div style="background:rgba(255,255,255,0.7); border-radius:8px; padding:10px 8px; text-align:center;">
+      <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">성장률</div>
+      <div style="font-size:14px; font-weight:600; color:#1a1a1a;">{_si['g']}</div>
+    </div>
+    <div style="background:rgba(255,255,255,0.7); border-radius:8px; padding:10px 8px; text-align:center;">
+      <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">할인율</div>
+      <div style="font-size:14px; font-weight:600; color:#1a1a1a;">{_si['wacc']}</div>
+    </div>
+    <div style="background:rgba(255,255,255,0.7); border-radius:8px; padding:10px 8px; text-align:center;">
+      <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">OPM</div>
+      <div style="font-size:14px; font-weight:600; color:#1a1a1a;">{_si['opm']}</div>
+    </div>
+    <div style="background:rgba(255,255,255,0.7); border-radius:8px; padding:10px 8px; text-align:center;">
+      <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">TGR</div>
+      <div style="font-size:14px; font-weight:600; color:#1a1a1a;">{_si['tgr']}</div>
+    </div>
+  </div>
+  <div style="border-top:1px solid {_pal['border']}; padding-top:16px; text-align:center;">
+    <div style="font-size:10px; color:#999; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px;">주당 가치</div>
+    <div style="font-size:20px; font-weight:700; color:{_pal['text']}; margin-bottom:5px;">{_si['vps']}</div>
+    <div style="font-size:13px; font-weight:600; color:{_si['ud_color']};">{_si['ud']}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
                             except Exception as _e:
                                 st.caption(f"시나리오 분석 로드 실패: {_e}")
 
