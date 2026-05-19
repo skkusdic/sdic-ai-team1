@@ -130,10 +130,19 @@ def _avg_margin_from_income(income: dict, years: int = 5) -> tuple[float | None,
 
 # ── 성장 프로파일 분류 ────────────────────────────────────────────────────
 
-def classify_growth_profile(income: dict, terminal_growth_rate: float = 0.015) -> dict:
+def classify_growth_profile(
+    income: dict,
+    terminal_growth_rate: float = 0.015,
+    company_events: dict | None = None,
+) -> dict:
     """
     DART 매출 데이터 기반 룰 분류로 5개년 성장률 시나리오 자동 생성.
     AI 판단 없이 숫자 기준만 사용.
+
+    company_events: get_dcf_inputs()의 company_events dict (선택).
+        제공 시 MAD 이상치 연도에 대해 DART 공시 태그를 확인해
+        M&A·영업양수도 등 일회성 이벤트가 확인된 구간만 제외함.
+        이벤트 근거 없는 이상치는 구조적 성장으로 간주해 제외하지 않음.
 
     분류 기준:
         CAGR > 30%  → high_growth_fade_down    (강한 fade-down)
@@ -168,34 +177,64 @@ def classify_growth_profile(income: dict, terminal_growth_rate: float = 0.015) -
             yoy.append((revenues[i] - revenues[i - 1]) / revenues[i - 1])
     volatile = (statistics.stdev(yoy) >= 0.25) if len(yoy) >= 2 else False
 
-    # ── 성장률 이상치 탐지 ─────────────────────────────────────────────────
-    # 업황 급락·반등처럼 특정 YoY 구간이 극단적으로 벗어날 때 정제 성장률 사용
-    effective_cagr      = cagr
-    growth_outlier_note = ""
+    # ── 성장률 이상치 탐지 (이벤트 근거 연동) ─────────────────────────────
+    # M&A·영업양수도 등 일회성 이벤트가 확인된 구간만 제외.
+    # 이벤트 근거 없는 이상치(구조적 고성장 가능성)는 제외하지 않음.
+    _ONEOFF_REVENUE_TAGS = {"합병/분할", "영업양수도"}
 
-    yoy_indexed = list(enumerate(yoy))   # [(0, g0), (1, g1), ...]
+    effective_cagr             = cagr
+    growth_outlier_note        = ""
+    structural_growth_confirmed = False  # 이상치가 구조적 성장이면 True → volatile caps 완화
+
+    yoy_indexed = list(enumerate(yoy))
     clean_indexed, out_indexed = _mad_outliers(yoy_indexed, threshold_pp=0.15)
 
     if out_indexed:
-        med_yoy        = statistics.median(yoy)
-        effective_cagr = statistics.mean([g for _, g in clean_indexed])
-        excluded_desc  = []
+        med_yoy = statistics.median(yoy)
+        confirmed_oneoff: list[tuple[int, float]] = []
+        structural_kept:  list[tuple[int, float]] = []
+
         for idx, g in out_indexed:
-            if idx < len(sorted_years) and idx + 1 < len(sorted_years):
-                y_from    = sorted_years[idx]
-                y_to      = sorted_years[idx + 1]
+            yr_to = sorted_years[idx + 1] if idx + 1 < len(sorted_years) else None
+            ev    = (company_events or {}).get(yr_to, {})
+            conf  = ev.get("confidence", "none")
+            tags  = set(ev.get("event_tags", []))
+            is_oneoff = conf in ("high", "medium") and bool(tags & _ONEOFF_REVENUE_TAGS)
+            (confirmed_oneoff if is_oneoff else structural_kept).append((idx, g))
+
+        # 일회성 확인 구간만 제외하고 effective_cagr 재계산
+        if confirmed_oneoff:
+            truly_clean    = [x for x in yoy_indexed if x not in confirmed_oneoff]
+            effective_cagr = statistics.mean([g for _, g in truly_clean]) if truly_clean else cagr
+            excl_descs = []
+            for idx, g in confirmed_oneoff:
+                y_from = sorted_years[idx]
+                y_to   = sorted_years[idx + 1] if idx + 1 < len(sorted_years) else "?"
+                ev     = (company_events or {}).get(y_to, {})
+                cause  = "·".join(t for t in set(ev.get("event_tags", [])) & _ONEOFF_REVENUE_TAGS) or "일회성 이벤트"
                 direction = "급락" if g < med_yoy else "급등"
-                cause     = ("업황 침체·일회성 손실 등 일시적 역풍"
-                             if g < med_yoy else
-                             "인수합병·일회성 매출 급증 등 일시적 순풍")
-                excluded_desc.append(f"{y_from}→{y_to}년 {g:.1%}({direction}·{cause})")
-        growth_outlier_note = (
-            f"[성장률 이상치 제외] {', '.join(excluded_desc)} 구간이 "
-            f"다른 연도 성장률 중위값({med_yoy:.1%}) 대비 크게 벗어납니다. "
-            f"일시적 이벤트로 판단하여 해당 구간을 제외했습니다. "
-            f"정제 성장률({effective_cagr:.1%})을 DCF 시나리오 기준으로 사용합니다 "
-            f"(원래 CAGR {cagr:.1%}은 참고용)."
-        )
+                excl_descs.append(f"{y_from}→{y_to}년 {g:.1%}({direction}·{cause})")
+            growth_outlier_note = (
+                f"[성장률 이상치 제외] {', '.join(excl_descs)} 구간에서 "
+                f"일회성 이벤트(M&A·영업양수도)가 확인되어 제외했습니다. "
+                f"정제 성장률({effective_cagr:.1%}) 사용 (원래 CAGR {cagr:.1%})."
+            )
+
+        # 이벤트 근거 없는 이상치 → 구조적 성장으로 간주, CAGR 유지 + caps 완화
+        structural_growth_confirmed = bool(structural_kept)
+        if structural_kept:
+            kept_descs = []
+            for idx, g in structural_kept:
+                y_from    = sorted_years[idx]
+                y_to      = sorted_years[idx + 1] if idx + 1 < len(sorted_years) else "?"
+                direction = "급락" if g < med_yoy else "급등"
+                kept_descs.append(f"{y_from}→{y_to}년 {g:.1%}({direction})")
+            kept_note = (
+                f"[구조적 성장 유지] {', '.join(kept_descs)} 구간이 통계적 이상치이나 "
+                f"M&A·영업양수도 등 일회성 이벤트 근거가 없어 제외하지 않습니다 "
+                f"(CAGR {effective_cagr:.1%} 유지)."
+            )
+            growth_outlier_note = "\n".join(filter(None, [growth_outlier_note, kept_note]))
 
     tgr = terminal_growth_rate
 
@@ -203,7 +242,9 @@ def classify_growth_profile(income: dict, terminal_growth_rate: float = 0.015) -
 
     if ec > 0.30:
         profile = "high_growth_fade_down"
-        if volatile:
+        # volatile이더라도 구조적 성장 확인 시 보수 caps 완화 (non-volatile 기준 적용)
+        use_conservative = volatile and not structural_growth_confirmed
+        if use_conservative:
             rates = [
                 min(ec, 0.25),
                 min(ec * 0.55, 0.18),
@@ -221,7 +262,11 @@ def classify_growth_profile(income: dict, terminal_growth_rate: float = 0.015) -
                 min(ec * 0.35, 0.12),
                 min(ec * 0.25, 0.08),
             ]
-            note = f"정제 CAGR {ec:.1%}이 30%를 초과해 고성장 정상화 시나리오를 적용했습니다."
+            if volatile and structural_growth_confirmed:
+                note = (f"정제 CAGR {ec:.1%}이 30%를 초과하고 변동성이 있으나 "
+                        "구조적 성장(이벤트 근거 없는 이상치)으로 판단해 완화된 caps를 적용했습니다.")
+            else:
+                note = f"정제 CAGR {ec:.1%}이 30%를 초과해 고성장 정상화 시나리오를 적용했습니다."
 
     elif ec > 0.05:
         profile = "moderate_growth_convergence"
@@ -271,13 +316,14 @@ def classify_growth_profile(income: dict, terminal_growth_rate: float = 0.015) -
         note = f"정제 CAGR {ec:.1%} 기반 역성장 — 0% 수렴 회복 시나리오를 적용했습니다."
 
     return {
-        "profile":             profile,
-        "historical_cagr":     round(cagr, 4),
-        "effective_cagr":      round(effective_cagr, 4),
-        "yearly_growth_rates": [round(r, 4) for r in rates],
-        "volatile":            volatile,
-        "note":                note,
-        "growth_outlier_note": growth_outlier_note,
+        "profile":                    profile,
+        "historical_cagr":            round(cagr, 4),
+        "effective_cagr":             round(effective_cagr, 4),
+        "yearly_growth_rates":        [round(r, 4) for r in rates],
+        "volatile":                   volatile,
+        "structural_growth_confirmed": structural_growth_confirmed,
+        "note":                       note,
+        "growth_outlier_note":        growth_outlier_note,
     }
 
 
@@ -737,8 +783,8 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
         cagr = 0.05
         warnings.append("매출 CAGR 계산 불가 — 기본값 5% 사용")
 
-    growth_info    = classify_growth_profile(income)
     company_events = dcf_inputs.get("company_events", {})  # {year: event_dict}
+    growth_info    = classify_growth_profile(income, company_events=company_events)
 
     if growth_info.get("volatile"):
         warnings.append(growth_info["note"])
@@ -827,14 +873,31 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
     # ── 순차입금 ─────────────────────────────────────────────────────────
     bs_latest  = bs.get(base_year, {})
     cash       = bs_latest.get("cash_and_cash_equivalents") or 0
+    # IFRS 16 리스부채는 운영 부채(임차료 회계 처리)로 금융 차입금과 성격이 달라 제외
     total_debt = (
         (bs_latest.get("short_term_borrowings")             or 0) +
         (bs_latest.get("current_portion_of_long_term_debt") or 0) +
         (bs_latest.get("long_term_borrowings")              or 0) +
-        (bs_latest.get("bonds_payable")                     or 0) +
-        (bs_latest.get("lease_liabilities")                 or 0)
+        (bs_latest.get("bonds_payable")                     or 0)
     )
     net_debt = total_debt - cash
+
+    # ── 운전자본 비율 (NWC / 매출) ───────────────────────────────────────
+    # 순운전자본 = (유동자산 - 현금) - (유동부채 - 단기차입금)
+    cur_assets = bs_latest.get("current_assets")
+    cur_liabs  = bs_latest.get("current_liabilities")
+    cash_val   = bs_latest.get("cash_and_cash_equivalents") or 0
+    st_debt    = (
+        (bs_latest.get("short_term_borrowings")             or 0) +
+        (bs_latest.get("current_portion_of_long_term_debt") or 0)
+    )
+
+    if cur_assets is not None and cur_liabs is not None and latest_revenue:
+        nwc      = (cur_assets - cash_val) - (cur_liabs - st_debt)
+        wc_ratio = round(max(-0.20, min(0.30, nwc / latest_revenue)), 4)
+    else:
+        wc_ratio = 0.03
+        warnings.append("유동자산/유동부채 데이터 없어 NWC ratio 기본값 3%를 사용합니다.")
 
     # ── 주식 수 ──────────────────────────────────────────────────────────
     shares_outstanding = shares_data.get("shares_outstanding")
@@ -900,7 +963,7 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
         }.get(growth_info["profile"], 0.020),
         "capex_ratio":              round(max(capex_ratio, 0), 4),
         "depreciation_ratio":       round(max(dep_ratio, 0), 4),
-        "working_capital_ratio":    0.00,
+        "working_capital_ratio":    wc_ratio,
         "net_debt":                 round(net_debt, 1),
         "shares_outstanding":       shares_outstanding,
         "_build_warnings":          warnings,
@@ -918,7 +981,8 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
     Returns:
         assumptions / projection / valuation / warnings / error
     """
-    # build_default_assumptions가 심은 경고 수거
+    # 호출자 dict를 변경하지 않기 위한 복사본 (pop 사이드이펙트 방지)
+    assumptions = dict(assumptions)
     warnings: list[str] = list(assumptions.pop("_build_warnings", []))
 
     income    = dcf_inputs.get("income_statement", {})
@@ -1179,10 +1243,11 @@ def calculate_dcf_scenarios(dcf_inputs: dict, base_assumptions: dict) -> dict:
 
     base_assumptions는 변경하지 않음 (내부에서 복사본 사용).
     """
-    income  = dcf_inputs.get("income_statement", {})
-    mm      = dcf_inputs.get("market_metrics", {})
+    income         = dcf_inputs.get("income_statement", {})
+    mm             = dcf_inputs.get("market_metrics", {})
+    company_events = dcf_inputs.get("company_events", {})
 
-    growth_profile = classify_growth_profile(income)
+    growth_profile = classify_growth_profile(income, company_events=company_events)
     base_tgr       = base_assumptions.get("terminal_growth_rate", 0.015)
     scenarios_g    = generate_growth_scenarios(growth_profile, terminal_growth_rate=base_tgr)
 

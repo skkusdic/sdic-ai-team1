@@ -181,13 +181,13 @@ def _load_from_db(company_name: str) -> dict:
             (company_name,),
         ).fetchall()
     return {
-        str(year): {"매출액": rev, "영업이익": op, "순이익": net}
+        year: {"매출액": rev, "영업이익": op, "순이익": net}
         for year, rev, op, net in rows
     }
 
 
 def get_financials(company_name: str) -> dict:
-    """6개년(2020~2025) 재무 데이터. 키는 문자열 연도. 단위: 백만원."""
+    """6개년(2020~2025) 재무 데이터. 키는 정수 연도. 단위: 백만원."""
     cached = _load_from_db(company_name)
     if cached:
         return cached
@@ -196,7 +196,7 @@ def get_financials(company_name: str) -> dict:
     if not raw:
         return {}
 
-    data = {str(year): metrics for year, metrics in raw.items()}
+    data = {year: metrics for year, metrics in raw.items()}
     _save_to_db(company_name, data)
     return data
 
@@ -432,8 +432,8 @@ def _fetch_shares(corp_code: str) -> dict:
             treasury = _to_int(row.get("tesstk_co", ""))
             distb    = _to_int(row.get("distb_stock_co", ""))
             issued   = _to_int(row.get("istc_totqy", ""))
-            # 유통주식수(자기주식 차감) 우선; 없으면 발행주식총수
-            if distb is not None:
+            # 유통주식수(자기주식 차감) 우선; 없거나 0이면 발행주식총수 fallback
+            if distb is not None and distb > 0:
                 outstanding = distb
                 note = "유통주식수(자기주식차감, 보통주)"
             else:
@@ -992,6 +992,8 @@ def get_dcf_inputs(company_name: str) -> dict:
         balance_sheet = {
             base_year: {
                 "cash_and_cash_equivalents":         _match_account(latest_items, ("BS",), ["현금및현금성자산"]),
+                "current_assets":                    _match_account(latest_items, ("BS",), ["유동자산"]),
+                "current_liabilities":               _match_account(latest_items, ("BS",), ["유동부채"]),
                 "short_term_borrowings":             _match_account(latest_items, ("BS",), ["단기차입금"]),
                 "current_portion_of_long_term_debt": _match_account(latest_items, ("BS",), ["유동성장기부채", "유동성장기차입금"]),
                 "long_term_borrowings":              _match_account(latest_items, ("BS",), ["장기차입금"]),
