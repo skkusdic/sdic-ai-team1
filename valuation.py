@@ -1218,10 +1218,27 @@ def build_default_assumptions(dcf_inputs: dict) -> dict:
 
     if cur_assets is not None and cur_liabs is not None and latest_revenue:
         nwc      = (cur_assets - cash_val) - (cur_liabs - st_debt)
-        wc_ratio = round(max(-0.20, min(0.30, nwc / latest_revenue)), 4)
+        raw_wc   = nwc / latest_revenue
+        # OPM 기반 sanity check: 고마진 기업은 공급자 우위로 WC 부담 낮음
+        if margin is not None and margin > 0.15 and raw_wc > 0.12:
+            wc_ratio = round(min(raw_wc, 0.12), 4)
+            warnings.append(
+                f"NWC ratio({raw_wc:.1%})가 높으나 OPM({margin:.1%})이 높은 고마진 구조이므로 "
+                f"12%로 보수 조정했습니다 (공급자 우위·선수금 구조 가능성)."
+            )
+        elif raw_wc > 0.25:
+            wc_ratio = round(min(raw_wc, 0.25), 4)
+            warnings.append(f"NWC ratio({raw_wc:.1%}) 이상치 → 25% 상한 적용.")
+        else:
+            wc_ratio = round(max(-0.20, raw_wc), 4)
     else:
-        wc_ratio = 0.03
-        warnings.append("유동자산/유동부채 데이터 없어 NWC ratio 기본값 3%를 사용합니다.")
+        # OPM 기반 스마트 fallback (BS 없을 때)
+        _opm_fb  = margin if margin is not None else 0.10
+        wc_ratio = 0.02 if _opm_fb > 0.20 else (0.03 if _opm_fb > 0.10 else 0.05)
+        warnings.append(
+            f"유동자산/유동부채 데이터 없어 OPM({_opm_fb:.1%}) 기반 "
+            f"NWC ratio 추정값 {wc_ratio:.0%}를 사용합니다."
+        )
 
     # ── 주식 수 ──────────────────────────────────────────────────────────
     shares_outstanding = shares_data.get("shares_outstanding")
@@ -1429,6 +1446,19 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
             "confidence":  "high" if da_xbrl else "medium",
             "note":        "CFO - CAPEX 실제 현금흐름 Method B",
         }
+
+    # ── 성장률 Fade 조정 ─────────────────────────────────────────────────────
+    # 슬라이더(g_single)가 DART 기본 1년차 비율(g_yearly[0])과 다르면
+    # 비율을 비례 스케일해 fade shape를 보존하면서 슬라이더 의도를 반영.
+    # g_yearly 자체가 없으면 g_single → TGR 방향 선형 fade 자동 생성.
+    if g_yearly and len(g_yearly) >= 5:
+        _first = g_yearly[0]
+        if abs(_first) > 0.001 and abs(g_single - _first) / abs(_first) > 0.05:
+            _scale = g_single / _first
+            g_yearly = [round(max(-0.50, min(1.00, r * _scale)), 4) for r in g_yearly]
+    elif not g_yearly:
+        _g_end  = max(tgr + 0.005, g_single * 0.45)
+        g_yearly = [round(g_single + (_g_end - g_single) * i / 4, 4) for i in range(5)]
 
     # ── 5개년 추정 (연도별 성장률 있으면 2-Stage, 없으면 단일값 fallback) ──
     # maintenance_capex_multiplier: Bear=1.20, Base=1.00, Bull=0.85
@@ -1812,6 +1842,101 @@ def explain_valuation_gap(dcf_inputs: dict, result: dict, assumptions: dict) -> 
         return ask("\n".join(lines), max_tokens=300)
     except Exception:
         return ""
+
+
+def calculate_dcf_montecarlo(
+    dcf_inputs:   dict,
+    assumptions:  dict,
+    n_simulations: int = 1000,
+    growth_std:   float = 0.05,
+    margin_std:   float = 0.03,
+    wacc_std:     float = 0.015,
+    seed:         int | None = None,
+) -> dict:
+    """
+    Monte Carlo DCF: 성장률·OPM·WACC를 정규분포로 샘플링해 VPS 분포를 추정.
+
+    Args:
+        growth_std:  매출 성장률 표준편차 (기본 ±5pp)
+        margin_std:  영업이익률 표준편차 (기본 ±3pp)
+        wacc_std:    할인율 표준편차    (기본 ±1.5pp)
+
+    Returns:
+        {
+            "n_simulations": int,       # 전체 시뮬레이션 수
+            "valid_count":   int,       # VPS 계산 성공 수
+            "p10": int, "p25": int, "p50": int, "p75": int, "p90": int,
+            "mean": float, "std": float,
+            "current_price": float | None,
+            "upside_probability": float,   # VPS > 현재가 비율 (0~1)
+            "histogram": {"bins": list[float], "counts": list[int]},
+        }
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        return {"error": "numpy 미설치 — pip install numpy"}
+
+    rng = np.random.default_rng(seed)
+    base_g    = assumptions.get("revenue_growth_rate", 0.05)
+    base_m    = assumptions.get("operating_margin", 0.10)
+    base_wacc = assumptions.get("discount_rate", 0.09)
+    current_price = dcf_inputs.get("market_metrics", {}).get("current_price")
+
+    g_samples    = rng.normal(base_g,    growth_std, n_simulations)
+    m_samples    = rng.normal(base_m,    margin_std, n_simulations)
+    wacc_samples = rng.normal(base_wacc, wacc_std,   n_simulations)
+
+    vps_list: list[int] = []
+    for g_s, m_s, w_s in zip(g_samples, m_samples, wacc_samples):
+        # 물리적 제약 적용
+        g_s = float(np.clip(g_s, -0.30, 1.00))
+        m_s = float(np.clip(m_s,  0.00, 0.60))
+        w_s = float(np.clip(w_s,  0.04, 0.30))
+
+        tgr = assumptions.get("terminal_growth_rate", 0.02)
+        if w_s <= tgr:
+            continue  # 이 조합은 계산 불가 — 스킵
+
+        asm = {k: v for k, v in assumptions.items() if k != "_build_warnings"}
+        asm["revenue_growth_rate"]  = g_s
+        asm["revenue_growth_rates"] = None   # 단일값 강제 (fade는 calculate_dcf에서 자동 적용)
+        asm["operating_margin"]     = m_s
+        asm["discount_rate"]        = w_s
+
+        r = calculate_dcf(dcf_inputs, asm)
+        vps = r.get("valuation", {}).get("value_per_share")
+        if vps is not None and vps > 0:
+            vps_list.append(vps)
+
+    if not vps_list:
+        return {"error": "유효한 VPS 시뮬레이션이 없습니다.", "n_simulations": n_simulations}
+
+    arr = np.array(vps_list, dtype=float)
+
+    # 히스토그램 (20구간)
+    counts, bin_edges = np.histogram(arr, bins=20)
+    bin_centers = ((bin_edges[:-1] + bin_edges[1:]) / 2).tolist()
+
+    upside_prob = (float(np.sum(arr > current_price)) / len(arr)) if current_price else None
+
+    return {
+        "n_simulations":    n_simulations,
+        "valid_count":      len(vps_list),
+        "p10":  int(np.percentile(arr, 10)),
+        "p25":  int(np.percentile(arr, 25)),
+        "p50":  int(np.percentile(arr, 50)),
+        "p75":  int(np.percentile(arr, 75)),
+        "p90":  int(np.percentile(arr, 90)),
+        "mean": round(float(np.mean(arr))),
+        "std":  round(float(np.std(arr))),
+        "current_price":      current_price,
+        "upside_probability": round(upside_prob, 3) if upside_prob is not None else None,
+        "histogram": {
+            "bins":   [round(b) for b in bin_centers],
+            "counts": counts.tolist(),
+        },
+    }
 
 
 if __name__ == "__main__":
