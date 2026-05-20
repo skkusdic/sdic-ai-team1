@@ -1070,6 +1070,40 @@ def calculate_dcf_confidence(dcf_inputs: dict, result: dict, assumptions: dict) 
                          "max_pts": 10, "earned_pts": 2, "ok": False,
                          "note": "시장 데이터 없어 보수적 기본값(9%)을 사용했습니다."})
 
+    # ── 4. Terminal Value 집중도 (보너스 카테고리, 최대 -10점 패널티) ────────
+    val_block = result.get("valuation", {})
+    pv_tv     = val_block.get("pv_terminal_value") or 0
+    ev        = val_block.get("enterprise_value")  or 1
+    tv_ratio  = pv_tv / ev
+
+    if tv_ratio >= 0.80:
+        score -= 10
+        details.append({
+            "category":   "모델 품질",
+            "item":       f"Terminal Value 집중도 과다 ({tv_ratio:.0%})",
+            "max_pts":    0, "earned_pts": -10, "ok": False,
+            "note": (
+                f"EV의 {tv_ratio:.0%}가 5년 이후 추정값(TV)에서 나옵니다. "
+                "WACC·TGR 가정 1pp 변동에 결과가 크게 흔들리므로 상대가치(PER/PBR) 병행 필수."
+            ),
+        })
+    elif tv_ratio >= 0.65:
+        score -= 4
+        details.append({
+            "category":   "모델 품질",
+            "item":       f"Terminal Value 집중도 주의 ({tv_ratio:.0%})",
+            "max_pts":    0, "earned_pts": -4, "ok": False,
+            "note": f"EV의 {tv_ratio:.0%}가 TV 기반. 할인율 민감도를 확인하세요.",
+        })
+    else:
+        details.append({
+            "category":   "모델 품질",
+            "item":       f"Terminal Value 집중도 양호 ({tv_ratio:.0%})",
+            "max_pts":    0, "earned_pts": 0, "ok": True,
+            "note": "TV 비중이 적정 수준으로 5개년 FCF의 기여도가 충분합니다.",
+        })
+
+    score = max(0, score)   # 음수 방지
     grade = "A" if score >= 80 else "B" if score >= 60 else "C" if score >= 40 else "D"
     grade_note = {
         "A": "높은 신뢰도 — 핵심 데이터가 충분히 확보됐습니다.",
@@ -1083,6 +1117,7 @@ def calculate_dcf_confidence(dcf_inputs: dict, result: dict, assumptions: dict) 
         "grade":      grade,
         "grade_note": grade_note,
         "details":    details,
+        "tv_ratio":   round(tv_ratio, 3),
     }
 
 
@@ -1782,6 +1817,107 @@ def diagnose_dcf_inputs(company_name: str) -> dict:
         "valuation_note":            val.get("valuation_note"),
         "warnings":                  result.get("warnings", []),
         "error":                     result.get("error"),
+    }
+
+
+def calculate_relative_valuation(dcf_inputs: dict, assumptions: dict) -> dict:
+    """
+    PER · PBR · EV/EBIT 기반 상대가치 분석.
+
+    성장 프로파일별 한국 시장 평균 배수 범위를 레퍼런스로 적용해
+    내재가치 범위(implied_vps_low ~ implied_vps_high)를 역산한다.
+
+    Returns:
+        {
+            "current_per": float | None,
+            "current_pbr": float | None,
+            "current_ev_ebit": float | None,
+            "profile":     str,
+            "benchmarks":  {"per": [low, high], "pbr": [low, high], "ev_ebit": [low, high]},
+            "implied": {
+                "per":     {"low": int, "high": int},
+                "pbr":     {"low": int, "high": int},
+                "ev_ebit": {"low": int, "high": int},
+            },
+            "note": str,
+        }
+    """
+    inc    = dcf_inputs.get("income_statement", {})
+    bs     = dcf_inputs.get("balance_sheet",    {})
+    mm     = dcf_inputs.get("market_metrics",   {})
+    shares = assumptions.get("shares_outstanding")
+    net_debt = assumptions.get("net_debt", 0) or 0
+
+    cp  = mm.get("current_price")
+    mkt_cap = (cp * shares / 1e8) if cp and shares else None   # 억원
+
+    # 최신 연도 재무
+    latest_yr     = max(inc.keys()) if inc else None
+    net_income    = inc[latest_yr].get("net_income")    if latest_yr else None
+    op_profit     = inc[latest_yr].get("operating_profit") if latest_yr else None
+    total_equity  = bs.get(latest_yr, {}).get("total_equity") if latest_yr else None
+
+    # ── 현재 배수 계산 ───────────────────────────────────────────────────
+    current_per     = round(mkt_cap / net_income,    1) if mkt_cap and net_income  and net_income  > 0 else None
+    current_pbr     = round(mkt_cap / total_equity,  2) if mkt_cap and total_equity and total_equity > 0 else None
+    ev_market       = (mkt_cap + net_debt)               if mkt_cap is not None else None
+    current_ev_ebit = round(ev_market / op_profit,   1) if ev_market is not None and op_profit and op_profit > 0 else None
+
+    # ── 프로파일별 한국 시장 평균 배수 레퍼런스 ─────────────────────────
+    profile = assumptions.get("growth_profile", "moderate_growth_convergence")
+    _BENCH = {
+        "high_growth_fade_down":       {"per": [25, 45], "pbr": [3.0, 7.0], "ev_ebit": [20, 35]},
+        "moderate_growth_convergence": {"per": [15, 25], "pbr": [1.5, 4.0], "ev_ebit": [12, 20]},
+        "low_growth_stable":           {"per": [10, 15], "pbr": [0.8, 1.8], "ev_ebit": [7,  12]},
+        "negative_growth_recovery":    {"per": [8,  13], "pbr": [0.5, 1.2], "ev_ebit": [5,  10]},
+        "insufficient_data":           {"per": [12, 22], "pbr": [1.0, 2.5], "ev_ebit": [8,  15]},
+    }
+    bench = _BENCH.get(profile, _BENCH["moderate_growth_convergence"])
+
+    def _vps(equity_억: float | None) -> int | None:
+        if equity_억 is None or not shares or shares <= 0:
+            return None
+        return int(equity_억 * 1e8 / shares)
+
+    # ── 내재가치 범위 역산 ───────────────────────────────────────────────
+    implied: dict = {}
+
+    if net_income and net_income > 0 and shares:
+        lo = _vps(net_income * bench["per"][0] - net_debt)
+        hi = _vps(net_income * bench["per"][1] - net_debt)
+        implied["per"] = {"low": lo, "high": hi}
+
+    if total_equity and total_equity > 0 and shares:
+        lo = _vps(total_equity * bench["pbr"][0])
+        hi = _vps(total_equity * bench["pbr"][1])
+        implied["pbr"] = {"low": lo, "high": hi}
+
+    if op_profit and op_profit > 0 and shares:
+        lo = _vps((op_profit * bench["ev_ebit"][0]) - net_debt)
+        hi = _vps((op_profit * bench["ev_ebit"][1]) - net_debt)
+        implied["ev_ebit"] = {"low": lo, "high": hi}
+
+    # ── 종합 노트 ─────────────────────────────────────────────────────────
+    note_parts = []
+    if current_per:
+        lo_b, hi_b = bench["per"]
+        if current_per < lo_b:
+            note_parts.append(f"PER {current_per:.1f}x는 동종 레퍼런스({lo_b}~{hi_b}x) 하단 이하 — 시장 Downside 반영 가능.")
+        elif current_per > hi_b:
+            note_parts.append(f"PER {current_per:.1f}x는 동종 레퍼런스({lo_b}~{hi_b}x) 상단 초과 — 성장 프리미엄 반영 상태.")
+        else:
+            note_parts.append(f"PER {current_per:.1f}x는 동종 레퍼런스({lo_b}~{hi_b}x) 내 — 적정 수준.")
+    if not note_parts:
+        note_parts.append("배수 계산에 필요한 데이터가 부족합니다.")
+
+    return {
+        "current_per":      current_per,
+        "current_pbr":      current_pbr,
+        "current_ev_ebit":  current_ev_ebit,
+        "profile":          profile,
+        "benchmarks":       bench,
+        "implied":          implied,
+        "note":             " ".join(note_parts),
     }
 
 
