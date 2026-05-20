@@ -1755,6 +1755,65 @@ def diagnose_dcf_inputs(company_name: str) -> dict:
     }
 
 
+def explain_valuation_gap(dcf_inputs: dict, result: dict, assumptions: dict) -> str:
+    """DCF 주당가치와 현재가 차이를 LLM이 자연어로 설명. 실패 시 빈 문자열 반환."""
+    try:
+        from claude_client import ask
+    except ImportError:
+        return ""
+
+    company = dcf_inputs.get("company_info", {}).get("company_name", "해당 기업")
+    current_price = dcf_inputs.get("market_metrics", {}).get("current_price")
+    val = result.get("valuation", {})
+    vps = val.get("value_per_share")
+
+    if vps is None or not current_price or current_price <= 0:
+        return ""
+
+    gap_pct   = (vps - current_price) / current_price
+    direction = "높습니다" if gap_pct > 0 else "낮습니다"
+
+    ev       = val.get("enterprise_value") or 0
+    tv       = val.get("terminal_value") or 0
+    tv_ratio = tv / ev if ev > 0 else None
+
+    g        = assumptions.get("revenue_growth_rate", 0)
+    wacc     = assumptions.get("discount_rate", 0)
+    opm      = assumptions.get("operating_margin", 0)
+    tgr      = assumptions.get("terminal_growth_rate", 0)
+    gp       = assumptions.get("growth_profile", "")
+    fcf_method = result.get("fcf_method", "")
+
+    lines = [
+        f"{company}의 DCF 분석 결과입니다.",
+        f"",
+        f"- 현재 주가: {current_price:,}원",
+        f"- DCF 주당가치: {vps:,}원",
+        f"- 차이: {gap_pct:+.1%} (DCF가 현재가보다 {abs(gap_pct):.1%} {direction})",
+        f"- 모델 가정: 매출성장률 {g:.1%} / WACC {wacc:.1%} / OPM {opm:.1%} / TGR {tgr:.1%}",
+    ]
+    if tv_ratio is not None:
+        lines.append(f"- 터미널 가치 비중: EV의 {tv_ratio:.0%}")
+    if gp:
+        lines.append(f"- 성장 프로파일: {gp}")
+    if fcf_method == "LOW_CONFIDENCE_PROXY":
+        lines.append("- FCF 추정 신뢰도: 낮음 (D&A·CAPEX 데이터 불완전)")
+
+    lines += [
+        "",
+        "위 수치를 근거로, DCF 내재가치와 시장가격 사이에 이런 차이가 발생할 수 있는 이유를"
+        " 투자자가 이해하기 쉬운 언어로 2~3문장으로 설명해주세요.",
+        "재무 구조상의 이유(성장 기대치 차이, 무형자산·브랜드 프리미엄, 시장 심리, 터미널 가치 민감도 등)를 중심으로 서술하세요.",
+        "'저평가'·'고평가' 단어는 쓰지 말고, Upside/Downside로 표현하세요.",
+        "한국어로 작성하세요.",
+    ]
+
+    try:
+        return ask("\n".join(lines), max_tokens=300)
+    except Exception:
+        return ""
+
+
 if __name__ == "__main__":
     import sys
     sys.stdout.reconfigure(encoding="utf-8")
