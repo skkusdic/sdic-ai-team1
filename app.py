@@ -820,7 +820,7 @@ with st.sidebar:
         _logo_html += (
             f'<div style="overflow:hidden; display:inline-flex; align-items:center;">'
             f'<img src="data:image/png;base64,{_dart_b64}" style="'
-            f'height:66px; width:auto; object-fit:contain;'
+            f'height:132px; width:auto; object-fit:contain;'
             f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;'
             f'clip-path:inset(6px);'
             f'">'
@@ -835,7 +835,7 @@ with st.sidebar:
     if _naver_b64:
         _logo_html += (
             f'<img src="data:image/png;base64,{_naver_b64}" style="'
-            f'height:22px; width:auto; object-fit:contain;'
+            f'height:16px; width:auto; object-fit:contain;'
             f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;">'
         )
     if _claude_b64:
@@ -915,6 +915,7 @@ _inp_l, _inp_c, _inp_r = st.columns([1, 2, 1])
 with _inp_c:
     st.markdown("<p style='font-size:14px; color:#555; margin-bottom:6px; text-align:center;'>분석할 기업명을 입력하세요</p>", unsafe_allow_html=True)
     company_input = st.text_input("", placeholder="예: 에이피알", label_visibility="collapsed")
+    st.markdown("<p style='font-size:12px; color:#aaa; margin-top:6px; text-align:center;'>본 프로그램은 금융감독원 DART에 공시 의무가 있는 국내 상장·비상장 기업에 대한 분석을 지원합니다.</p>", unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="fade-section">', unsafe_allow_html=True)
@@ -1759,20 +1760,20 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                     _current_price = dcf_inputs.get("market_metrics", {}).get("current_price")
 
                     # ── D1: 사용 가이드 ──────────────────────────────────────────
-                    with st.expander("DCF 밸류에이션이란? (처음이라면 펼쳐보세요)", expanded=False):
+                    with st.expander("DCF 밸류에이션이란?", expanded=False):
                         st.markdown("""
-**DCF(Discounted Cash Flow)**는 기업이 미래에 창출할 현금을 현재 가치로 환산해 내재가치를 추정하는 방법입니다.
+DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가치로 환산해 내재가치를 추정하는 방법입니다.
 
-**슬라이더 조정 방법**
-- **매출 성장률**: DART 3개년 CAGR 기반 자동 추정. 낙관/보수 시나리오로 조정해보세요.
-- **영업이익률(OPM)**: 최근 3~5년 평균. 값이 높을수록 주당가치 상승.
-- **할인율(WACC)**: 투자자가 요구하는 최소 수익률. 높을수록 주당가치 하락.
-- **영구성장률(TGR)**: 5년 이후 영구 성장률. 통상 GDP 수준 1~3%. WACC보다 반드시 낮게 설정.
-- **법인세율**: 기본값 실효세율 24%.
+슬라이더 조정 방법
+- 매출 성장률: DART 3개년 CAGR 기반 자동 추정. 낙관/보수 시나리오로 조정해보세요.
+- 영업이익률(OPM): 최근 3~5년 평균. 값이 높을수록 주당가치 상승.
+- 할인율(WACC): 투자자가 요구하는 최소 수익률. 높을수록 주당가치 하락.
+- 영구성장률(TGR): 5년 이후 영구 성장률. 통상 GDP 수준 1~3%. WACC보다 반드시 낮게 설정.
+- 법인세율: 기본값 실효세율 24%.
 
-**결과 해석**
-- 주당 DCF 가치 > 현재가 → **Upside** (시장이 과소평가 구간일 수 있음)
-- 주당 DCF 가치 < 현재가 → **Downside** (현재가에 고성장 기대 반영된 상태일 수 있음)
+결과 해석
+- 주당 DCF 가치 > 현재가 → Upside (시장이 과소평가 구간일 수 있음)
+- 주당 DCF 가치 < 현재가 → Downside (현재가에 고성장 기대 반영된 상태일 수 있음)
 - ROIC > WACC → 자본비용을 초과하는 수익을 창출하는 기업
 - 신뢰도 등급 A~D: 데이터 완전성·예측 가능성·모델 품질 종합 채점
 """)
@@ -2134,8 +2135,8 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                     st.caption(f"기준 CAGR: {_gp['effective_cagr']:.1%}  |  프로파일: {_gp.get('profile', '')}  |  {_gp.get('note', '')}")
                                 st.caption("※ 시나리오는 DART 공시 기반 자동 추정값 기준이며, 위 슬라이더 설정과 독립적으로 계산됩니다.")
 
-                                _SC_CLR = {"bear":"#dc2626","base":"#2e7d32","bull":"#1565c0"}
-                                _SC_BG  = {"bear":"#fff5f5","base":"#f1f8f0","bull":"#f0f4ff"}
+                                _SC_CLR = {"bear":"#84cc16","base":"#16a34a","bull":"#14532d"}
+                                _SC_BG  = {"bear":"#f7fee7","base":"#f0fdf4","bull":"#dcfce7"}
                                 _SC_LBL = {"bear":"Bear","base":"Base","bull":"Bull"}
                                 _sc1, _sc2, _sc3 = st.columns(3)
                                 for _card_col, _skey in zip([_sc1, _sc2, _sc3], ["bear","base","bull"]):
@@ -2185,7 +2186,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                     _fig_rng = go.Figure()
                                     if "bear" in _vps_vals and "bull" in _vps_vals:
                                         _fig_rng.add_shape(type="rect", x0=_vps_vals["bear"], x1=_vps_vals["bull"], y0=0.3, y1=0.7, fillcolor="rgba(46,125,50,0.12)", line=dict(width=0))
-                                    for _rk, (_rclr, _rlbl) in {"bear":("#dc2626","Bear"),"base":("#2e7d32","Base"),"bull":("#1565c0","Bull")}.items():
+                                    for _rk, (_rclr, _rlbl) in {"bear":("#84cc16","Bear"),"base":("#16a34a","Base"),"bull":("#14532d","Bull")}.items():
                                         if _rk in _vps_vals:
                                             _fig_rng.add_shape(type="line", x0=_vps_vals[_rk], x1=_vps_vals[_rk], y0=0.25, y1=0.75, line=dict(color=_rclr, width=2.5))
                                             _fig_rng.add_trace(go.Scatter(x=[_vps_vals[_rk]], y=[0.5], mode="markers+text",
