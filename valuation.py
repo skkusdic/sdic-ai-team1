@@ -1851,11 +1851,12 @@ def calculate_relative_valuation(dcf_inputs: dict, assumptions: dict) -> dict:
     cp  = mm.get("current_price")
     mkt_cap = (cp * shares / 1e8) if cp and shares else None   # 억원
 
-    # 최신 연도 재무
+    # 최신 연도 재무 (BS는 company_info base_year 기준으로 저장됨)
+    base_year     = dcf_inputs.get("company_info", {}).get("base_year", 2024)
     latest_yr     = max(inc.keys()) if inc else None
-    net_income    = inc[latest_yr].get("net_income")    if latest_yr else None
+    net_income    = inc[latest_yr].get("net_income")       if latest_yr else None
     op_profit     = inc[latest_yr].get("operating_profit") if latest_yr else None
-    total_equity  = bs.get(latest_yr, {}).get("total_equity") if latest_yr else None
+    total_equity  = bs.get(base_year, {}).get("total_equity")  # BS는 base_year 키로 저장
 
     # ── 현재 배수 계산 ───────────────────────────────────────────────────
     current_per     = round(mkt_cap / net_income,    1) if mkt_cap and net_income  and net_income  > 0 else None
