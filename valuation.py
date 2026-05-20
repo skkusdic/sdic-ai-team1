@@ -1774,8 +1774,8 @@ def explain_valuation_gap(dcf_inputs: dict, result: dict, assumptions: dict) -> 
     direction = "높습니다" if gap_pct > 0 else "낮습니다"
 
     ev       = val.get("enterprise_value") or 0
-    tv       = val.get("terminal_value") or 0
-    tv_ratio = tv / ev if ev > 0 else None
+    pv_tv    = val.get("pv_terminal_value") or 0
+    tv_ratio = pv_tv / ev if ev > 0 else None
 
     g        = assumptions.get("revenue_growth_rate", 0)
     wacc     = assumptions.get("discount_rate", 0)
