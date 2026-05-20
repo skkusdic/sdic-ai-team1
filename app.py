@@ -41,6 +41,18 @@ try:
     from valuation import calculate_dcf_confidence as _calc_confidence
 except ImportError:
     _calc_confidence = None
+try:
+    from valuation import explain_valuation_gap as _explain_gap
+except ImportError:
+    _explain_gap = None
+try:
+    from valuation import calculate_dcf_montecarlo as _calc_mc
+except ImportError:
+    _calc_mc = None
+try:
+    from valuation import calculate_relative_valuation as _calc_rv
+except ImportError:
+    _calc_rv = None
 
 st.set_page_config(page_title="AI 재무 컨설팅 어시스턴트", layout="wide")
 
@@ -797,8 +809,12 @@ with st.sidebar:
     )
     _dart_path   = os.path.join(os.path.dirname(__file__), "dart_logo.png")
     _claude_path = os.path.join(os.path.dirname(__file__), "claude_logo.png")
+    _bok_path    = os.path.join(os.path.dirname(__file__), "bok_logo.png")
+    _naver_path  = os.path.join(os.path.dirname(__file__), "naver_logo.png")
     _dart_b64   = img_to_base64_transparent(_dart_path)   if os.path.exists(_dart_path)   else None
     _claude_b64 = img_to_base64_transparent(_claude_path) if os.path.exists(_claude_path) else None
+    _bok_b64    = img_to_base64_transparent(_bok_path)    if os.path.exists(_bok_path)    else None
+    _naver_b64  = img_to_base64_transparent(_naver_path)  if os.path.exists(_naver_path)  else None
     _logo_html = ""
     if _dart_b64:
         _logo_html += (
@@ -810,6 +826,18 @@ with st.sidebar:
             f'">'
             f'</div>'
         )
+    if _bok_b64:
+        _logo_html += (
+            f'<img src="data:image/png;base64,{_bok_b64}" style="'
+            f'height:22px; width:auto; object-fit:contain;'
+            f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;">'
+        )
+    if _naver_b64:
+        _logo_html += (
+            f'<img src="data:image/png;base64,{_naver_b64}" style="'
+            f'height:22px; width:auto; object-fit:contain;'
+            f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;">'
+        )
     if _claude_b64:
         _logo_html += (
             f'<img src="data:image/png;base64,{_claude_b64}" style="'
@@ -820,7 +848,7 @@ with st.sidebar:
     st.markdown(f"""
 <div style="margin:0; padding:0; line-height:1.4;">
     <div style="font-size:13px; color:#888; margin-bottom:0;">Powered by</div>
-    <div style="font-size:13px; color:#888; font-weight:700; margin-top:0;">DART API · Claude AI</div>
+    <div style="font-size:13px; color:#888; font-weight:700; margin-top:0;">DART API · BOK ECOS · Naver · Claude AI</div>
     <div style="display:flex; gap:4px; margin-top:2px; margin-bottom:0; align-items:center; margin-left:-20px;">
         {_logo_html}
     </div>
@@ -1274,7 +1302,8 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             for part in parts:
                                 if part.strip():
                                     sentences.append(part.strip())
-                    return [s for s in sentences if s]
+                    # 콜론만으로 끝나는 짧은 레이블(예: "주요사업 영역:") 제거
+                    return [s for s in sentences if s and not _re.match(r'^[^.!?]{1,40}:$', s)]
 
                 _DEFAULT_TITLES = {
                     "1": "주요 사업 영역",
@@ -1319,6 +1348,13 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         if not body.strip() and title:
                             body  = title
                             title = _DEFAULT_TITLES.get(num, f"항목 {num}")
+                        # body 앞머리의 "제목:" 중복 레이블 제거
+                        _body_head = body.lstrip()
+                        _dup_pat = _re.compile(
+                            r'^' + _re.escape(title) + r'\s*:\s*', _re.IGNORECASE
+                        )
+                        if _dup_pat.match(_body_head):
+                            body = _dup_pat.sub('', _body_head, count=1).strip()
                         sections.append((num, title, body))
                         i += 2
                     return sections
@@ -1854,6 +1890,20 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                     unsafe_allow_html=True,
                                 )
 
+                        # ── Gap LLM 설명 ──────────────────────────────────
+                        if _explain_gap is not None and vps is not None and _current_price and _current_price > 0:
+                            try:
+                                _gap_cache_key = f"gap_exp_{company_name}_{vps}_{_current_price}"
+                                if _gap_cache_key not in st.session_state:
+                                    with st.spinner("차이 원인 분석 중..."):
+                                        st.session_state[_gap_cache_key] = _explain_gap(dcf_inputs, result, assumptions)
+                                _gap_explain = st.session_state.get(_gap_cache_key, "")
+                                if _gap_explain:
+                                    with st.expander("왜 이런 차이가 날까요?", expanded=False):
+                                        st.markdown(_gap_explain)
+                            except Exception:
+                                pass
+
                         # ── D3: 성장 프로파일 배지 ───────────────────────────────
                         _gp_profile = assumptions.get("growth_profile", "")
                         _gp_note    = assumptions.get("growth_assumption_note", "")
@@ -2082,6 +2132,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 )
                                 if _gp.get("effective_cagr") is not None:
                                     st.caption(f"기준 CAGR: {_gp['effective_cagr']:.1%}  |  프로파일: {_gp.get('profile', '')}  |  {_gp.get('note', '')}")
+                                st.caption("※ 시나리오는 DART 공시 기반 자동 추정값 기준이며, 위 슬라이더 설정과 독립적으로 계산됩니다.")
 
                                 _SC_CLR = {"bear":"#dc2626","base":"#2e7d32","bull":"#1565c0"}
                                 _SC_BG  = {"bear":"#fff5f5","base":"#f1f8f0","bull":"#f0f4ff"}
@@ -2186,6 +2237,42 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             except Exception as _e:
                                 st.caption(f"시나리오 분석 로드 실패: {_e}")
 
+                        # ── Monte Carlo ───────────────────────────────────
+                        if _calc_mc is not None and vps is not None:
+                            try:
+                                _mc_key = f"mc_{company_name}_{assumptions.get('revenue_growth_rate',0):.3f}_{assumptions.get('discount_rate',0):.3f}"
+                                if _mc_key not in st.session_state:
+                                    with st.spinner("Monte Carlo 1,000회 시뮬레이션 중..."):
+                                        st.session_state[_mc_key] = _calc_mc(dcf_inputs, assumptions, n_simulations=1000)
+                                _mc = st.session_state[_mc_key]
+                                if _mc and "error" not in _mc:
+                                    st.markdown('<div style="margin-top:40px;"></div>', unsafe_allow_html=True)
+                                    st.markdown("<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;font-size:20px;font-weight:700;color:#1a1a1a;margin:0 0 12px 0;'>Monte Carlo 시뮬레이션</p>", unsafe_allow_html=True)
+                                    st.caption(f"성장률 ±5pp / OPM ±3pp / WACC ±1.5pp 정규분포 샘플링 — 유효 시뮬레이션 {_mc['valid_count']:,}회")
+                                    _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
+                                    for _col, _lbl, _key in zip(
+                                        [_mc1,_mc2,_mc3,_mc4,_mc5],
+                                        ["P10","P25","P50","P75","P90"],
+                                        ["p10","p25","p50","p75","p90"]
+                                    ):
+                                        with _col:
+                                            st.metric(_lbl, f"{_mc[_key]:,}원")
+                                    if _mc.get("upside_probability") is not None:
+                                        _up = _mc["upside_probability"]
+                                        _up_clr = "#1b5e20" if _up >= 0.5 else "#b71c1c"
+                                        st.markdown(f'<div style="margin-top:8px;font-size:14px;">현재가({_mc["current_price"]:,}원) 대비 Upside 확률: <strong style="color:{_up_clr};">{_up:.1%}</strong></div>', unsafe_allow_html=True)
+                                    _fig_mc = go.Figure(go.Bar(
+                                        x=_mc["histogram"]["bins"],
+                                        y=_mc["histogram"]["counts"],
+                                        marker_color=["#15803d" if b > (_mc["current_price"] or 0) else "#b91c1c" for b in _mc["histogram"]["bins"]],
+                                    ))
+                                    if _mc.get("current_price"):
+                                        _fig_mc.add_vline(x=_mc["current_price"], line_color="#f59e0b", line_width=2, line_dash="dash", annotation_text="현재가", annotation_position="top right")
+                                    _fig_mc.update_layout(height=220, margin=dict(l=20,r=20,t=10,b=40), xaxis=dict(title="주당가치 (원)", tickformat=","), yaxis=dict(title="빈도"), paper_bgcolor="white", plot_bgcolor="white", bargap=0.05)
+                                    st.plotly_chart(_fig_mc, use_container_width=True)
+                            except Exception as _mce:
+                                st.caption(f"Monte Carlo 로드 실패: {_mce}")
+
                         # ── D7: Reverse DCF ───────────────────────────────────────
                         if _calc_implied is not None and _current_price and _current_price > 0:
                             try:
@@ -2211,6 +2298,27 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                         f'</div>',
                                         unsafe_allow_html=True,
                                     )
+                            except Exception:
+                                pass
+
+                        # ── D8: 상대가치 분석 ─────────────────────────────
+                        if _calc_rv is not None:
+                            try:
+                                _rv = _calc_rv(dcf_inputs, assumptions)
+                                _imp = _rv.get("implied", {})
+                                if _imp:
+                                    st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
+                                    st.markdown("<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;font-size:20px;font-weight:700;color:#1a1a1a;margin:0 0 4px 0;'>상대가치 분석 (PER · PBR · EV/EBIT)</p>", unsafe_allow_html=True)
+                                    _bench = _rv["benchmarks"]
+                                    st.caption(f"레퍼런스 배수 — PER {_bench['per'][0]}~{_bench['per'][1]}x  |  PBR {_bench['pbr'][0]}~{_bench['pbr'][1]}x  |  EV/EBIT {_bench['ev_ebit'][0]}~{_bench['ev_ebit'][1]}x  ({_rv['profile']})")
+                                    _rv1, _rv2, _rv3 = st.columns(3)
+                                    for _col, _method, _label in zip([_rv1,_rv2,_rv3], ["per","pbr","ev_ebit"], ["PER","PBR","EV/EBIT"]):
+                                        _iv = _imp.get(_method)
+                                        if _iv:
+                                            with _col:
+                                                _cur = {"per":_rv["current_per"],"pbr":_rv["current_pbr"],"ev_ebit":_rv["current_ev_ebit"]}[_method]
+                                                st.markdown(f'<div style="background:#f8f9fa;border-radius:10px;padding:16px;text-align:center;"><div style="font-size:12px;color:#888;margin-bottom:6px;">{_label} implied</div><div style="font-size:18px;font-weight:700;color:#1a1a1a;">{_iv["low"]:,} ~ {_iv["high"]:,}원</div><div style="font-size:12px;color:#666;margin-top:4px;">현재 {_label} {_cur}x</div></div>', unsafe_allow_html=True)
+                                    st.caption(f"※ {_rv['note']}")
                             except Exception:
                                 pass
 
