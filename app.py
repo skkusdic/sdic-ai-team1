@@ -1445,7 +1445,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 with st.spinner(f"{used_mode} 처리 중..."):
                     try:
                         if used_mode == "RAG":
-                            claude_answer, top_chunks = answer_with_rag(q, financials, company_name)
+                            top_chunks, claude_answer = answer_with_rag(q, financials, company_name)
                             result = {"mode": "RAG", "q": q, "chunks": top_chunks, "answer": claude_answer}
                         else:
                             sql, df_result, err = run_text2sql(q, company_name)
