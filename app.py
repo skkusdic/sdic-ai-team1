@@ -101,7 +101,7 @@ label, .stTextInput label,
     border-radius: 6px !important;
     padding: 10px 14px !important;
     font-size: 15px !important;
-    background-color: #ffffff !important;
+    background-color: rgba(255,255,255,0.35) !important;
     color: #1a1a1a !important;
     transition: border-color 0.2s ease !important;
 }
@@ -156,15 +156,33 @@ label, .stTextInput label,
 [data-baseweb="radio-group"] [aria-checked="true"] {
     background-color: transparent !important;
 }
+/* 라디오 선택 시 레이블 전체 배경 초록 깔리는 것 완전 제거 */
+[data-testid="stRadio"] label,
+[data-testid="stRadio"] label:hover,
+[data-testid="stRadio"] label:focus,
+[data-testid="stRadio"] label:active,
+[data-testid="stRadio"] label[data-active],
+[data-testid="stRadio"] div[data-testid="stMarkdownContainer"],
+[data-baseweb="radio-group"] label,
+[data-baseweb="radio-group"] label:hover,
+[data-baseweb="radio-group"] label > div,
+[data-baseweb="radio-group"] label > div:hover,
+[data-baseweb="radio-group"] label[data-focus-visible-added],
+[data-baseweb="radio-group"] [data-selected="true"],
+[data-baseweb="radio-group"] [data-checked="true"],
+[data-baseweb="radio-group"] [aria-checked="true"] {
+    background-color: transparent !important;
+    background: transparent !important;
+}
 [data-baseweb="radio"]:hover > div:first-child {
     border-color: #2e7d32 !important;
     box-shadow: 0 0 0 3px rgba(46,125,50,0.15) !important;
 }
 
 .stButton > button {
-    color: #ffffff !important;
+    color: rgba(0,0,0,0.55) !important;
     border: none !important;
-    background-color: #2e7d32 !important;
+    background-color: rgba(46,125,50,0.45) !important;
     border-radius: 6px !important;
     padding: 10px 28px !important;
     font-size: 14px !important;
@@ -174,7 +192,7 @@ label, .stTextInput label,
 }
 
 .stButton > button:hover {
-    background-color: #1b5e20 !important;
+    background-color: rgba(27,94,32,0.6) !important;
 }
 
 [data-testid="stDataFrame"] thead th,
@@ -725,8 +743,8 @@ if _is_startup:
 /* ── 제목 3D 바닥 그림자 ── */
 [data-testid="stMain"] h1 {
     text-shadow:
-        0 6px 0 rgba(130,130,130,0.45),
-        0 14px 18px rgba(0,0,0,0.2) !important;
+        0 6px 8px rgba(100,100,100,0.5),
+        0 14px 24px rgba(0,0,0,0.28) !important;
 }
 .header-logo img {
     filter: drop-shadow(0 30px 14px rgba(0,0,0,0.42)) !important;
@@ -758,7 +776,7 @@ if _is_startup:
     <h1 class="header-title"
         style="font-size:5.04rem; font-weight:500; margin:0; color:#ffffff;
                font-family:'Pretendard', 'Noto Sans KR', sans-serif;
-               text-shadow:0 6px 0 rgba(130,130,130,0.45),0 14px 18px rgba(0,0,0,0.2);">
+               text-shadow:0 6px 8px rgba(100,100,100,0.5),0 14px 24px rgba(0,0,0,0.28);">
         AI 재무 컨설팅 어시스턴트
     </h1>
 </div>
@@ -820,43 +838,42 @@ with st.sidebar:
         _logo_html += (
             f'<div style="overflow:hidden; display:inline-flex; align-items:center;">'
             f'<img src="data:image/png;base64,{_dart_b64}" style="'
-            f'height:132px; width:auto; object-fit:contain;'
+            f'height:28px; width:auto; object-fit:contain;'
             f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;'
-            f'clip-path:inset(6px);'
+            f'clip-path:inset(2px);'
             f'">'
             f'</div>'
         )
     if _bok_b64:
         _logo_html += (
             f'<img src="data:image/png;base64,{_bok_b64}" style="'
-            f'height:22px; width:auto; object-fit:contain;'
+            f'height:16px; width:auto; object-fit:contain;'
             f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;">'
         )
     if _naver_b64:
         _logo_html += (
             f'<img src="data:image/png;base64,{_naver_b64}" style="'
-            f'height:16px; width:auto; object-fit:contain;'
+            f'height:11px; width:auto; object-fit:contain;'
             f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;">'
         )
     if _claude_b64:
         _logo_html += (
             f'<img src="data:image/png;base64,{_claude_b64}" style="'
-            f'height:28px; width:auto; object-fit:contain;'
+            f'height:20px; width:auto; object-fit:contain;'
             f'mix-blend-mode:multiply; border:none; outline:none; box-shadow:none;'
             f'">'
         )
     st.markdown(f"""
 <div style="margin:0; padding:0; line-height:1.4;">
-    <div style="font-size:13px; color:#888; margin-bottom:0;">Powered by</div>
-    <div style="font-size:13px; color:#888; font-weight:700; margin-top:0;">DART API · BOK ECOS · Naver · Claude AI</div>
-    <div style="display:flex; gap:4px; margin-top:2px; margin-bottom:0; align-items:center; margin-left:-20px;">
+    <div style="font-size:13px; color:#888; margin-bottom:2px;">Powered by</div>
+    <div style="font-size:13px; color:#888; font-weight:700; margin-bottom:6px;">DART API · BOK ECOS · Naver · Claude AI</div>
+    <div style="display:flex; gap:10px; align-items:center; margin-left:-4px; margin-bottom:14px;">
         {_logo_html}
     </div>
 </div>
-<div style="height:1px; background-color:{'#aaaaaa' if _is_startup else '#2e7d32'}; margin:16px 0 0 0; border-radius:1px;"></div>
 """, unsafe_allow_html=True)
-    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
     st.markdown("#### 에이전트 상태")
+    st.markdown("<div style='height:0.2px; background-color:#000000; margin:-8px 0 10px 0; border-radius:1px;'></div>", unsafe_allow_html=True)
     for key, label in [("data", "Data Agent"), ("analysis", "Analysis Agent"), ("report", "Report Agent")]:
         s = st.session_state.agent_status[key]
         if s == "실행 중":
@@ -1495,7 +1512,16 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
             if st.session_state.qa_history:
                 st.markdown("---")
                 for item in st.session_state.qa_history:
-                    st.markdown(f"**Q.** {item['q']}")
+                    st.markdown(
+                        f"<div style='margin-top:24px;'>"
+                        f"<div style='font-size:11px; color:#aaa; margin-bottom:6px; letter-spacing:0.04em;'>입력된 질문</div>"
+                        f"<p style='font-size:1.43rem; font-weight:700; color:#1a1a1a; "
+                        f"letter-spacing:-0.01em; margin:0 0 8px 0; "
+                        f"padding-left:16px; border-left:4px solid #2e7d32;'>"
+                        f"Q.&nbsp; {item['q']}</p>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
                     badge_color = "#1565c0" if item["mode"] == "RAG" else "#6a1b9a"
                     st.markdown(
                         f"<span style='font-size:11px; background:{badge_color}; color:#fff; "
@@ -1510,7 +1536,20 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         for score, chunk in item["chunks"]:
                             with st.expander(f"{chunk['label']} — 유사도 {score:.3f}"):
                                 st.write(chunk["text"])
-                        st.info(item["answer"])
+                        st.markdown(
+                            f"<div style='"
+                            f"background-color:#f0f4df; "
+                            f"border:1px solid #b6c96a; "
+                            f"border-left:4px solid #8fa832; "
+                            f"border-radius:8px; "
+                            f"padding:16px 20px; "
+                            f"color:#2d3a0e; "
+                            f"font-size:15px; "
+                            f"line-height:1.8;'>"
+                            f"{item['answer']}"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
                     else:
                         st.markdown("**생성된 SQL**")
                         st.code(item["sql"], language="sql")
@@ -1551,7 +1590,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         '  <div style="padding-top:100px; width:100%;">'
                         '    <div style="height:2px; background:#e0e0e0;"></div>'
                         '  </div>'
-                        '  <div style="width:2px; flex:1; min-height:120px; background:#e0e0e0;"></div>'
+                        '  <div style="width:2px; flex:1; min-height:180px; background:#e0e0e0;"></div>'
                         '</div>',
                         unsafe_allow_html=True,
                     )
@@ -1576,7 +1615,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                 with _btn_c:
                     st.markdown(
                         '<div style="display:flex; justify-content:center; margin-top:-44px; margin-bottom:4px;">'
-                        '<div style="width:2px; height:52px; background:#e0e0e0;"></div>'
+                        '<div style="width:2px; height:100px; background:#e0e0e0;"></div>'
                         '</div>',
                         unsafe_allow_html=True,
                     )
@@ -2303,25 +2342,33 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                 pass
 
                         # ── D8: 상대가치 분석 ─────────────────────────────
-                        if _calc_rv is not None:
+                        if _calc_rv is not None and dcf_inputs:
                             try:
-                                _rv = _calc_rv(dcf_inputs, assumptions)
-                                _imp = _rv.get("implied", {})
-                                if _imp:
-                                    st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
-                                    st.markdown("<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;font-size:20px;font-weight:700;color:#1a1a1a;margin:0 0 4px 0;'>상대가치 분석 (PER · PBR · EV/EBIT)</p>", unsafe_allow_html=True)
-                                    _bench = _rv["benchmarks"]
-                                    st.caption(f"레퍼런스 배수 — PER {_bench['per'][0]}~{_bench['per'][1]}x  |  PBR {_bench['pbr'][0]}~{_bench['pbr'][1]}x  |  EV/EBIT {_bench['ev_ebit'][0]}~{_bench['ev_ebit'][1]}x  ({_rv['profile']})")
+                                _rv_key = f"rv_{company_name}"
+                                if _rv_key not in st.session_state:
+                                    st.session_state[_rv_key] = _calc_rv(dcf_inputs, assumptions)
+                                _rv = st.session_state[_rv_key]
+                                if _rv and "error" not in _rv:
+                                    st.markdown('<div style="margin-top:40px;"></div>', unsafe_allow_html=True)
+                                    st.markdown("<p style='font-family:Pretendard,\"Noto Sans KR\",sans-serif;font-size:20px;font-weight:700;color:#1a1a1a;margin:0 0 12px 0;'>상대가치 분석</p>", unsafe_allow_html=True)
+                                    st.caption(f"성장 프로파일 기준 한국 시장 밴드 비교 | 프로파일: {_rv.get('growth_profile', '')}")
                                     _rv1, _rv2, _rv3 = st.columns(3)
-                                    for _col, _method, _label in zip([_rv1,_rv2,_rv3], ["per","pbr","ev_ebit"], ["PER","PBR","EV/EBIT"]):
-                                        _iv = _imp.get(_method)
-                                        if _iv:
-                                            with _col:
-                                                _cur = {"per":_rv["current_per"],"pbr":_rv["current_pbr"],"ev_ebit":_rv["current_ev_ebit"]}[_method]
-                                                st.markdown(f'<div style="background:#f8f9fa;border-radius:10px;padding:16px;text-align:center;"><div style="font-size:12px;color:#888;margin-bottom:6px;">{_label} implied</div><div style="font-size:18px;font-weight:700;color:#1a1a1a;">{_iv["low"]:,} ~ {_iv["high"]:,}원</div><div style="font-size:12px;color:#666;margin-top:4px;">현재 {_label} {_cur}x</div></div>', unsafe_allow_html=True)
-                                    st.caption(f"※ {_rv['note']}")
-                            except Exception:
-                                pass
+                                    for _col, _method in zip([_rv1, _rv2, _rv3], ["per", "pbr", "ev_ebit"]):
+                                        _d = _rv.get(_method, {})
+                                        if not _d or _d.get("value") is None:
+                                            continue
+                                        with _col:
+                                            _label = {"per": "PER", "pbr": "PBR", "ev_ebit": "EV/EBIT"}[_method]
+                                            _val   = _d["value"]
+                                            _lo, _hi = _d["benchmark_low"], _d["benchmark_high"]
+                                            _sig   = _d["signal"]
+                                            _sig_clr = {"Upside":"#1b5e20","Downside":"#b71c1c","Neutral":"#e65100","N/A":"#888"}.get(_sig, "#888")
+                                            st.metric(_label, f"{_val:.1f}x", delta=f"밴드 {_lo:.1f}x–{_hi:.1f}x")
+                                            st.markdown(f'<div style="font-size:13px;color:{_sig_clr};font-weight:700;">{_sig}</div>', unsafe_allow_html=True)
+                                            if _d.get("implied_price"):
+                                                st.caption(f"적정가 추정: {int(_d['implied_price']):,}원")
+                            except Exception as _e:
+                                st.caption(f"상대가치 분석 로드 실패: {_e}")
 
             st.markdown('</div>', unsafe_allow_html=True)
 
