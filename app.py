@@ -872,8 +872,8 @@ with st.sidebar:
     </div>
 </div>
 """, unsafe_allow_html=True)
+    st.markdown("<div style='height:0.2px; background-color:#000000; margin:0 0 10px 0; border-radius:1px;'></div>", unsafe_allow_html=True)
     st.markdown("#### 에이전트 상태")
-    st.markdown("<div style='height:0.2px; background-color:#000000; margin:-8px 0 10px 0; border-radius:1px;'></div>", unsafe_allow_html=True)
     for key, label in [("data", "Data Agent"), ("analysis", "Analysis Agent"), ("report", "Report Agent")]:
         s = st.session_state.agent_status[key]
         if s == "실행 중":
