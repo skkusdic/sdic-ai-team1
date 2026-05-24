@@ -504,6 +504,36 @@ div[data-testid="stAlert"] div {
     vertical-align: middle;
     margin-right: 2px;
 }
+
+/* ── Expander 모서리 둥글게 + 색상 통일 ── */
+[data-testid="stExpander"] {
+    border-radius: 12px !important;
+    border: 1px solid #e8e8e8 !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+}
+/* 헤더(접힌 상태) — 배경 흰색, 전체 모서리 둥글게 */
+[data-testid="stExpander"] > details > summary,
+[data-testid="stExpander"] [data-testid="stExpanderHeader"],
+[data-testid="stExpander"] [role="button"] {
+    background-color: #ffffff !important;
+    border-radius: 12px !important;
+    border: none !important;
+    color: #1a1a1a !important;
+}
+/* 헤더(열린 상태) — 위 모서리만 둥글게 */
+[data-testid="stExpander"] > details[open] > summary,
+[data-testid="stExpander"][aria-expanded="true"] [data-testid="stExpanderHeader"],
+[data-testid="stExpander"][aria-expanded="true"] [role="button"] {
+    border-radius: 12px 12px 0 0 !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+}
+/* 내부 콘텐츠 영역 */
+[data-testid="stExpanderDetails"],
+[data-testid="stExpander"] > details > div {
+    background-color: #ffffff !important;
+    border-radius: 0 0 12px 12px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -689,7 +719,7 @@ if _is_startup:
 <style>
 [data-testid="stAppViewContainer"] {
     background:
-        linear-gradient(170deg, rgba(187,202,146,0.88) 0%, rgba(45,69,53,0.93) 100%),
+        linear-gradient(170deg, rgba(240,248,230,0.94) 0%, rgba(180,215,175,0.88) 55%, rgba(120,170,120,0.82) 100%),
         url('data:image/jpeg;base64,""" + (_wallpaper_b64 or "") + """') center 65%/cover no-repeat !important;
 }
 /* 사이드바: 버튼과 동일한 반투명 회색 */
@@ -709,7 +739,7 @@ if _is_startup:
 [data-testid="stMain"] .stMarkdown p {
     color: #1a1a1a !important;
 }
-/* 검색창: 진한 반투명 회색 + 딥그린 두꺼운 테두리 */
+/* 검색창: 밝은 반투명 흰색 + 초록 테두리 */
 [data-testid="stMain"] [data-baseweb="input"],
 [data-testid="stMain"] [data-baseweb="base-input"] {
     background: transparent !important;
@@ -718,42 +748,42 @@ if _is_startup:
     outline: none !important;
 }
 [data-testid="stMain"] .stTextInput > div > div > input {
-    background: rgba(60,60,60,0.45) !important;
-    border: 2.5px solid #0a3d14 !important;
+    background: rgba(120,120,120,0.28) !important;
+    border: 2px solid #2e7d32 !important;
     color: #1a1a1a !important;
 }
 [data-testid="stMain"] .stTextInput > div > div > input::placeholder {
-    color: rgba(0,0,0,0.55) !important;
+    color: rgba(0,0,0,0.50) !important;
 }
 [data-testid="stMain"] .stTextInput > div > div > input:focus {
-    border-color: #0a3d14 !important;
-    box-shadow: 0 0 0 3px rgba(10,61,20,0.3) !important;
+    border-color: #1b5e20 !important;
+    box-shadow: 0 0 0 3px rgba(46,125,50,0.20) !important;
 }
-/* 분석 시작 버튼: 진한 반투명 회색 + 딥그린 두꺼운 테두리 */
+/* 분석 시작 버튼: 초록 배경 + 흰 텍스트 */
 [data-testid="stMain"] .stButton > button {
-    background-color: rgba(60,60,60,0.45) !important;
-    border: 2.5px solid #0a3d14 !important;
-    color: #1a1a1a !important;
+    background-color: rgba(46,125,50,0.88) !important;
+    border: 2px solid #1b5e20 !important;
+    color: #ffffff !important;
 }
 [data-testid="stMain"] .stButton > button:hover {
-    background-color: rgba(60,60,60,0.62) !important;
-    border-color: #0a3d14 !important;
+    background-color: rgba(27,94,32,0.96) !important;
+    border-color: #1b5e20 !important;
 }
 
-/* ── 제목 3D 바닥 그림자 ── */
+/* ── 요소 그림자 (밝은 배경용으로 완화) ── */
 [data-testid="stMain"] h1 {
     text-shadow:
-        0 6px 8px rgba(100,100,100,0.5),
-        0 14px 24px rgba(0,0,0,0.28) !important;
+        0 2px 6px rgba(46,125,50,0.18),
+        0 6px 18px rgba(0,0,0,0.08) !important;
 }
 .header-logo img {
-    filter: drop-shadow(0 30px 14px rgba(0,0,0,0.42)) !important;
+    filter: drop-shadow(0 8px 18px rgba(0,0,0,0.14)) !important;
 }
 [data-testid="stMain"] .stTextInput > div > div > input {
-    box-shadow: 0 20px 14px rgba(0,0,0,0.42) !important;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.09) !important;
 }
 [data-testid="stMain"] .stButton > button {
-    box-shadow: 0 30px 14px rgba(0,0,0,0.42) !important;
+    box-shadow: 0 4px 18px rgba(46,125,50,0.28) !important;
 }
 
 /* ── 순차 페이드인: (레이블+검색창 동시) → 버튼 ── */
@@ -774,9 +804,9 @@ if _is_startup:
             min-height:44vh; padding-top:32px; text-align:center;">
     {_logo_center_html}
     <h1 class="header-title"
-        style="font-size:5.04rem; font-weight:500; margin:0; color:#ffffff;
+        style="font-size:5.04rem; font-weight:500; margin:0; color:#1b5e20;
                font-family:'Pretendard', 'Noto Sans KR', sans-serif;
-               text-shadow:0 6px 8px rgba(100,100,100,0.5),0 14px 24px rgba(0,0,0,0.28);">
+               text-shadow:0 2px 6px rgba(46,125,50,0.18),0 6px 18px rgba(0,0,0,0.08);">
         AI 재무 컨설팅 어시스턴트
     </h1>
 </div>
@@ -1522,7 +1552,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         f"</div>",
                         unsafe_allow_html=True,
                     )
-                    badge_color = "#1565c0" if item["mode"] == "RAG" else "#6a1b9a"
+                    badge_color = "#2e7d32" if item["mode"] == "RAG" else "#1b5e20"
                     st.markdown(
                         f"<span style='font-size:11px; background:{badge_color}; color:#fff; "
                         f"padding:2px 8px; border-radius:4px;'>{item['mode']}</span>",
@@ -1538,12 +1568,12 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 st.write(chunk["text"])
                         st.markdown(
                             f"<div style='"
-                            f"background-color:#f0f4df; "
-                            f"border:1px solid #b6c96a; "
-                            f"border-left:4px solid #8fa832; "
+                            f"background-color:#f1f8f1; "
+                            f"border:1px solid #c8e6c9; "
+                            f"border-left:4px solid #2e7d32; "
                             f"border-radius:8px; "
                             f"padding:16px 20px; "
-                            f"color:#2d3a0e; "
+                            f"color:#1a1a1a; "
                             f"font-size:15px; "
                             f"line-height:1.8;'>"
                             f"{item['answer']}"
@@ -1912,7 +1942,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                         if vps is not None and _current_price and _current_price > 0:
                             _gap       = (vps - _current_price) / _current_price
                             _gap_label = "Upside" if _gap >= 0 else "Downside"
-                            _gap_color = "#1b5e20" if _gap >= 0 else "#b71c1c"
+                            _gap_color = "#1b5e20" if _gap >= 0 else "#dc2626"
                             _gap_bg    = "#e8f5e9" if _gap >= 0 else "#ffebee"
                             st.markdown(
                                     f'<div style="display:flex; align-items:center;'
@@ -1955,10 +1985,10 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                             "insufficient_data":           "데이터 부족",
                         }
                         _GP_COLOR = {
-                            "high_growth_fade_down":       "#1565c0",
+                            "high_growth_fade_down":       "#2e7d32",
                             "moderate_growth_convergence": "#2e7d32",
                             "low_growth_stable":           "#4caf50",
-                            "negative_growth_recovery":    "#e65100",
+                            "negative_growth_recovery":    "#dc2626",
                             "insufficient_data":           "#757575",
                         }
                         if _gp_profile in _GP_LABEL:
@@ -2013,7 +2043,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                 _verdict     = _roic_res.get("verdict", "")
                                 _verdict_note = _roic_res.get("verdict_note", "")
                                 if _latest_roic is not None and _spread is not None:
-                                    _roic_clr = "#1b5e20" if _spread > 0 else "#b71c1c"
+                                    _roic_clr = "#1b5e20" if _spread > 0 else "#dc2626"
                                     _roic_bg  = "#e8f5e9" if _spread > 0 else "#ffebee"
                                     st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
                                     st.markdown(
@@ -2135,7 +2165,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                     text=_s_text,
                                     texttemplate="%{text}",
                                     textfont={"size": 11, "color": "#1a1a1a"},
-                                    colorscale=[[0.0,"#b91c1c"],[0.35,"#fca5a5"],[0.5,"#f9fafb"],[0.65,"#86efac"],[1.0,"#15803d"]],
+                                    colorscale=[[0.0,"#dc2626"],[0.35,"#fca5a5"],[0.5,"#f9fafb"],[0.65,"#a5d6a7"],[1.0,"#1b5e20"]],
                                     zmid=0.0, zmin=-0.5, zmax=0.5, showscale=False,
                                 ))
                                 _base_g = assumptions.get("revenue_growth_rate", 0)
@@ -2174,8 +2204,8 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                     st.caption(f"기준 CAGR: {_gp['effective_cagr']:.1%}  |  프로파일: {_gp.get('profile', '')}  |  {_gp.get('note', '')}")
                                 st.caption("※ 시나리오는 DART 공시 기반 자동 추정값 기준이며, 위 슬라이더 설정과 독립적으로 계산됩니다.")
 
-                                _SC_CLR = {"bear":"#84cc16","base":"#16a34a","bull":"#14532d"}
-                                _SC_BG  = {"bear":"#f7fee7","base":"#f0fdf4","bull":"#dcfce7"}
+                                _SC_CLR = {"bear":"#4caf50","base":"#2e7d32","bull":"#1b5e20"}
+                                _SC_BG  = {"bear":"#f1f8f1","base":"#e8f5e9","bull":"#c8e6c9"}
                                 _SC_LBL = {"bear":"Bear","base":"Base","bull":"Bull"}
                                 _sc1, _sc2, _sc3 = st.columns(3)
                                 for _card_col, _skey in zip([_sc1, _sc2, _sc3], ["bear","base","bull"]):
@@ -2207,7 +2237,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                             f'border-radius:12px; padding:24px 16px; text-align:center; margin-bottom:12px;">'
                                             f'<div style="font-size:13px; color:{_sclr}; font-weight:700;'
                                             f'letter-spacing:0.06em; text-transform:uppercase; margin-bottom:12px;">{_SC_LBL[_skey]}</div>'
-                                            f'<div style="font-size:22px; font-weight:700; color:#1a1a1a;">{_svt}</div>'
+                                            f'<div style="font-size:26px; font-weight:700; color:#1a1a1a;">{_svt}</div>'
                                             f'<div style="font-size:12px; color:#666; margin-top:8px;">'
                                             f'성장률 1년차 {_sg1}  |  WACC {_s.get("discount_rate",0):.1%}</div>'
                                             f'<div style="font-size:12px; color:#666;">'
@@ -2225,7 +2255,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                     _fig_rng = go.Figure()
                                     if "bear" in _vps_vals and "bull" in _vps_vals:
                                         _fig_rng.add_shape(type="rect", x0=_vps_vals["bear"], x1=_vps_vals["bull"], y0=0.3, y1=0.7, fillcolor="rgba(46,125,50,0.12)", line=dict(width=0))
-                                    for _rk, (_rclr, _rlbl) in {"bear":("#84cc16","Bear"),"base":("#16a34a","Base"),"bull":("#14532d","Bull")}.items():
+                                    for _rk, (_rclr, _rlbl) in {"bear":("#4caf50","Bear"),"base":("#2e7d32","Base"),"bull":("#1b5e20","Bull")}.items():
                                         if _rk in _vps_vals:
                                             _fig_rng.add_shape(type="line", x0=_vps_vals[_rk], x1=_vps_vals[_rk], y0=0.25, y1=0.75, line=dict(color=_rclr, width=2.5))
                                             _fig_rng.add_trace(go.Scatter(x=[_vps_vals[_rk]], y=[0.5], mode="markers+text",
@@ -2299,12 +2329,12 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                             st.metric(_lbl, f"{_mc[_key]:,}원")
                                     if _mc.get("upside_probability") is not None:
                                         _up = _mc["upside_probability"]
-                                        _up_clr = "#1b5e20" if _up >= 0.5 else "#b71c1c"
+                                        _up_clr = "#1b5e20" if _up >= 0.5 else "#dc2626"
                                         st.markdown(f'<div style="margin-top:8px;font-size:14px;">현재가({_mc["current_price"]:,}원) 대비 Upside 확률: <strong style="color:{_up_clr};">{_up:.1%}</strong></div>', unsafe_allow_html=True)
                                     _fig_mc = go.Figure(go.Bar(
                                         x=_mc["histogram"]["bins"],
                                         y=_mc["histogram"]["counts"],
-                                        marker_color=["#15803d" if b > (_mc["current_price"] or 0) else "#b91c1c" for b in _mc["histogram"]["bins"]],
+                                        marker_color=["#2e7d32" if b > (_mc["current_price"] or 0) else "#dc2626" for b in _mc["histogram"]["bins"]],
                                     ))
                                     if _mc.get("current_price"):
                                         _fig_mc.add_vline(x=_mc["current_price"], line_color="#f59e0b", line_width=2, line_dash="dash", annotation_text="현재가", annotation_position="top right")
@@ -2327,13 +2357,13 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                         "font-size:20px; font-weight:700; color:#1a1a1a; margin:0 0 12px 0;'>Reverse DCF — 시장 내재 할인율</p>",
                                         unsafe_allow_html=True,
                                     )
-                                    _idr_clr = "#1b5e20" if _idr < assumptions["discount_rate"] else "#b71c1c"
+                                    _idr_clr = "#1b5e20" if _idr < assumptions["discount_rate"] else "#dc2626"
                                     st.markdown(
                                         f'<div style="padding:16px 20px; border-radius:10px;'
                                         f'background:#f8f9fa; border:1px solid #e0e0e0;">'
                                         f'<div style="font-size:13px; color:#555; margin-bottom:8px;">'
                                         f'현재 주가({_current_price:,}원) 기준 시장 내재 WACC</div>'
-                                        f'<div style="font-size:28px; font-weight:700; color:{_idr_clr}; margin-bottom:10px;">{_idr:.2%}</div>'
+                                        f'<div style="font-size:26px; font-weight:700; color:{_idr_clr}; margin-bottom:10px;">{_idr:.2%}</div>'
                                         f'<div style="font-size:13px; color:#666; line-height:1.7;">{_inote}</div>'
                                         f'</div>',
                                         unsafe_allow_html=True,
@@ -2362,7 +2392,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                             _val   = _d["value"]
                                             _lo, _hi = _d["benchmark_low"], _d["benchmark_high"]
                                             _sig   = _d["signal"]
-                                            _sig_clr = {"Upside":"#1b5e20","Downside":"#b71c1c","Neutral":"#e65100","N/A":"#888"}.get(_sig, "#888")
+                                            _sig_clr = {"Upside":"#1b5e20","Downside":"#dc2626","Neutral":"#f59e0b","N/A":"#888"}.get(_sig, "#888")
                                             st.metric(_label, f"{_val:.1f}x", delta=f"밴드 {_lo:.1f}x–{_hi:.1f}x")
                                             st.markdown(f'<div style="font-size:13px;color:{_sig_clr};font-weight:700;">{_sig}</div>', unsafe_allow_html=True)
                                             if _d.get("implied_price"):
