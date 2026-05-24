@@ -14,9 +14,11 @@ import 규칙:
 CI(.github/workflows/model-check.yml)가 위 규칙을 자동 검증합니다.
 """
 import os
+import time
 from typing import Optional
 
 from anthropic import Anthropic
+from anthropic import APIStatusError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -39,29 +41,35 @@ def _get_client() -> Anthropic:
     return _client
 
 
+def _create_with_retry(messages: list, max_tokens: int, max_retries: int = 3) -> str:
+    """529 Overloaded 에러 시 지수 백오프로 재시도."""
+    client = _get_client()
+    for attempt in range(max_retries):
+        try:
+            response = client.messages.create(
+                model=_LOCKED_MODEL,
+                max_tokens=max_tokens,
+                messages=messages,
+            )
+            return response.content[0].text
+        except APIStatusError as e:
+            if e.status_code == 529 and attempt < max_retries - 1:
+                time.sleep(2 ** attempt)  # 1s, 2s, 4s
+                continue
+            raise
+
+
 def ask(prompt: str, max_tokens: int = 600) -> str:
     """단일 프롬프트로 Claude 분석을 받는다.
 
     모델은 claude-haiku-4-5로 고정되어 있으며 변경할 수 없습니다.
     """
-    client = _get_client()
-    response = client.messages.create(
-        model=_LOCKED_MODEL,
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.content[0].text
+    return _create_with_retry([{"role": "user", "content": prompt}], max_tokens)
 
 
 def ask_messages(messages: list, max_tokens: int = 600) -> str:
     """여러 턴의 대화로 Claude 분석을 받는다."""
-    client = _get_client()
-    response = client.messages.create(
-        model=_LOCKED_MODEL,
-        max_tokens=max_tokens,
-        messages=messages,
-    )
-    return response.content[0].text
+    return _create_with_retry(messages, max_tokens)
 
 
 if __name__ == "__main__":
