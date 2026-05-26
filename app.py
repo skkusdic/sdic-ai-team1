@@ -1575,6 +1575,10 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             with st.expander(f"{chunk['label']} — 유사도 {score:.3f}"):
                                 st.write(chunk["text"])
                         st.markdown(
+                            "<div style='font-size:11px; color:#aaa; margin-bottom:6px; letter-spacing:0.04em;'>AI 답변</div>",
+                            unsafe_allow_html=True,
+                        )
+                        st.markdown(
                             f"<div style='"
                             f"background-color:#f1f8f1; "
                             f"border:1px solid #c8e6c9; "
@@ -1582,9 +1586,10 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             f"border-radius:8px; "
                             f"padding:16px 20px; "
                             f"color:#1a1a1a; "
-                            f"font-size:15px; "
                             f"line-height:1.8;'>"
-                            f"{item['answer']}"
+                            f"<p style='font-size:1.43rem; font-weight:700; color:#1a1a1a; "
+                            f"letter-spacing:-0.01em; margin:0 0 10px 0;'>A.</p>"
+                            f"<span style='font-size:15px;'>{item['answer']}</span>"
                             f"</div>",
                             unsafe_allow_html=True,
                         )
@@ -1594,7 +1599,56 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         if item.get("error"):
                             st.error(f"실행 오류: {item['error']}")
                         elif item["df"] is not None:
-                            _show_tbl(_tbl(item["df"]))
+                            # DataFrame → 숫자/텍스트 답변 변환
+                            _df_ans = item["df"]
+                            try:
+                                if len(_df_ans) == 1 and len(_df_ans.columns) == 1:
+                                    _val = _df_ans.iloc[0, 0]
+                                    try:
+                                        _ans_text = f"{float(_val):,.0f}"
+                                    except (ValueError, TypeError):
+                                        _ans_text = str(_val)
+                                elif len(_df_ans) == 1:
+                                    _parts = []
+                                    for _col, _val in zip(_df_ans.columns, _df_ans.iloc[0]):
+                                        try:
+                                            _parts.append(f"{_col}: <strong>{float(_val):,.0f}</strong>")
+                                        except (ValueError, TypeError):
+                                            _parts.append(f"{_col}: <strong>{_val}</strong>")
+                                    _ans_text = "&nbsp;&nbsp;|&nbsp;&nbsp;".join(_parts)
+                                else:
+                                    _row_texts = []
+                                    for _, _row in _df_ans.iterrows():
+                                        _parts = []
+                                        for _col, _val in zip(_df_ans.columns, _row):
+                                            try:
+                                                _parts.append(f"{_col}: <strong>{float(_val):,.0f}</strong>")
+                                            except (ValueError, TypeError):
+                                                _parts.append(f"{_col}: <strong>{_val}</strong>")
+                                        _row_texts.append("&nbsp;&nbsp;|&nbsp;&nbsp;".join(_parts))
+                                    _ans_text = "<br>".join(_row_texts)
+                            except Exception as _e:
+                                _ans_text = str(_df_ans.to_dict())
+
+                            st.markdown(
+                                "<div style='font-size:11px; color:#aaa; margin-bottom:6px; letter-spacing:0.04em;'>AI 답변</div>",
+                                unsafe_allow_html=True,
+                            )
+                            st.markdown(
+                                f"<div style='"
+                                f"background-color:#f1f8f1; "
+                                f"border:1px solid #c8e6c9; "
+                                f"border-left:4px solid #2e7d32; "
+                                f"border-radius:8px; "
+                                f"padding:16px 20px; "
+                                f"color:#1a1a1a; "
+                                f"line-height:1.8;'>"
+                                f"<p style='font-size:1.43rem; font-weight:700; color:#1a1a1a; "
+                                f"letter-spacing:-0.01em; margin:0 0 10px 0;'>A.</p>"
+                                f"<span style='font-size:15px;'>{_ans_text}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
 
                     st.markdown("")
 
