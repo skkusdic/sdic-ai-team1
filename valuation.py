@@ -1436,15 +1436,30 @@ def calculate_dcf(dcf_inputs: dict, assumptions: dict) -> dict:
             f"dep_ratio={dep_r:.2%}로 Method A 적용."
         )
     elif (cfo is not None) and (capex_raw > 0) and (base_revenue > 0):
-        fcf_method_key  = "CFO_CAPEX"
-        use_cfo_method  = True
-        base_fcf_cfo    = cfo - capex_raw
-        fcf_margin      = base_fcf_cfo / base_revenue
-        warnings.append(
-            f"D&A(CF/XBRL) 모두 불가 → CFO - CAPEX 방식으로 FCF 계산 "
-            f"(CFO {cfo:,.0f}억, CAPEX {capex_raw:,.0f}억, "
-            f"FCF {base_fcf_cfo:,.0f}억, margin {fcf_margin:.2%})."
-        )
+        base_fcf_cfo = cfo - capex_raw
+        if base_fcf_cfo > 0:
+            fcf_method_key = "CFO_CAPEX"
+            use_cfo_method = True
+            fcf_margin     = base_fcf_cfo / base_revenue
+            warnings.append(
+                f"D&A(CF/XBRL) 모두 불가 → CFO - CAPEX 방식으로 FCF 계산 "
+                f"(CFO {cfo:,.0f}억, CAPEX {capex_raw:,.0f}억, "
+                f"FCF {base_fcf_cfo:,.0f}억, margin {fcf_margin:.2%})."
+            )
+        else:
+            # CFO < CAPEX → 음수 FCF 방지
+            # 연결 재무제표에 금융 자회사(캐피탈·카드 등) 현금흐름이 섞이거나
+            # 대규모 투자 시기인 경우 CFO 기반 방식이 부적절.
+            # NOPAT 기반 LOW_CONFIDENCE_PROXY로 전환.
+            fcf_method_key = "LOW_CONFIDENCE_PROXY"
+            use_cfo_method = False
+            fcf_margin     = None
+            warnings.append(
+                f"CFO({cfo:,.0f}억) < CAPEX({capex_raw:,.0f}억): "
+                f"CFO 기반 FCF가 음수({base_fcf_cfo:,.0f}억)입니다. "
+                "연결 재무제표 금융 자회사 영향 또는 일시적 투자 집중 시기로 판단되어 "
+                "NOPAT 기반 방식으로 전환합니다 (신뢰도 낮음, 슬라이더로 가정 조정 권장)."
+            )
     else:
         fcf_method_key  = "LOW_CONFIDENCE_PROXY"
         use_cfo_method  = False

@@ -2099,11 +2099,17 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                 f'letter-spacing:-0.02em; white-space:nowrap;">{value}</div>'
                                 f'</div>'
                             )
+                        _ev_disp  = (f"{val['enterprise_value']:,.0f}억원"
+                                     if val['enterprise_value'] >= 0
+                                     else f"N/A (음수 EV {val['enterprise_value']:,.0f}억)")
+                        _eq_disp  = (f"{val['equity_value']:,.0f}억원"
+                                     if val['equity_value'] >= 0
+                                     else f"N/A (순부채 초과 {val['equity_value']:,.0f}억)")
                         _dv1, _dv2, _dv3 = st.columns(3)
                         with _dv1:
-                            st.markdown(_dcf_card("Enterprise Value", f"{val['enterprise_value']:,.0f}억원"), unsafe_allow_html=True)
+                            st.markdown(_dcf_card("Enterprise Value", _ev_disp), unsafe_allow_html=True)
                         with _dv2:
-                            st.markdown(_dcf_card("Equity Value", f"{val['equity_value']:,.0f}억원"), unsafe_allow_html=True)
+                            st.markdown(_dcf_card("Equity Value", _eq_disp), unsafe_allow_html=True)
                         with _dv3:
                             st.markdown(_dcf_card("주당 가치", vps_display), unsafe_allow_html=True)
 
