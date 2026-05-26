@@ -2034,11 +2034,26 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
 
                         # ── D4: 경고 + ROIC + 신뢰도 ────────────────────────────
                         _build_warns = result.get("warnings") or []
+                        def _analysis_box(msg):
+                            """Claude 분석 탭 본문 박스 스타일로 메시지 표시"""
+                            import html as _html_mod
+                            _lines = _html_mod.escape(msg).replace('\n', '<br>')
+                            st.markdown(
+                                f'<div style="background:#ffffff; border:1px solid #e8e8e8;'
+                                f'border-left:3px solid #2e7d32; border-radius:0 8px 8px 0;'
+                                f'padding:14px 20px; margin-bottom:8px;'
+                                f'box-shadow:0 1px 3px rgba(0,0,0,0.04);">'
+                                f'<p style="font-family:\'Pretendard\',\'Noto Sans KR\',sans-serif;'
+                                f'font-size:14px; line-height:1.8; color:#333; margin:0;'
+                                f'word-break:keep-all;">{_lines}</p></div>',
+                                unsafe_allow_html=True,
+                            )
                         if (v_status == "invalid_negative_fcf" and v_note) or _build_warns:
+                            st.markdown('<div style="margin-top:16px;"></div>', unsafe_allow_html=True)
                             if v_status == "invalid_negative_fcf" and v_note:
-                                st.warning(v_note)
+                                _analysis_box(v_note)
                             for _w in _build_warns:
-                                st.warning(_w)
+                                _analysis_box(_w)
 
                         if _calc_roic is not None:
                             try:
