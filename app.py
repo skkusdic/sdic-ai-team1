@@ -1599,32 +1599,39 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                         if item.get("error"):
                             st.error(f"실행 오류: {item['error']}")
                         elif item["df"] is not None:
-                            # DataFrame → 숫자/텍스트 답변 변환
+                            # DataFrame → 숫자/텍스트 답변 변환 (컬럼명 기반 자동 포맷)
                             _df_ans = item["df"]
+
+                            def _fmt_val(col, val):
+                                """컬럼명에 따라 값 포맷 결정."""
+                                try:
+                                    _fv = float(val)
+                                    if any(k in col for k in ["액", "이익", "원가", "비용", "판관비"]):
+                                        return f"{_fv:,.0f}원"
+                                    elif any(k in col for k in ["율", "률", "성장"]):
+                                        return f"{_fv:.2f}%"
+                                    else:
+                                        return f"{_fv:,.0f}"
+                                except (ValueError, TypeError):
+                                    return str(val)
+
                             try:
                                 if len(_df_ans) == 1 and len(_df_ans.columns) == 1:
-                                    _val = _df_ans.iloc[0, 0]
-                                    try:
-                                        _ans_text = f"{float(_val):,.0f}"
-                                    except (ValueError, TypeError):
-                                        _ans_text = str(_val)
+                                    _col = _df_ans.columns[0]
+                                    _ans_text = _fmt_val(_col, _df_ans.iloc[0, 0])
                                 elif len(_df_ans) == 1:
-                                    _parts = []
-                                    for _col, _val in zip(_df_ans.columns, _df_ans.iloc[0]):
-                                        try:
-                                            _parts.append(f"{_col}: <strong>{float(_val):,.0f}</strong>")
-                                        except (ValueError, TypeError):
-                                            _parts.append(f"{_col}: <strong>{_val}</strong>")
+                                    _parts = [
+                                        f"{_col}: <strong>{_fmt_val(_col, _val)}</strong>"
+                                        for _col, _val in zip(_df_ans.columns, _df_ans.iloc[0])
+                                    ]
                                     _ans_text = "&nbsp;&nbsp;|&nbsp;&nbsp;".join(_parts)
                                 else:
                                     _row_texts = []
                                     for _, _row in _df_ans.iterrows():
-                                        _parts = []
-                                        for _col, _val in zip(_df_ans.columns, _row):
-                                            try:
-                                                _parts.append(f"{_col}: <strong>{float(_val):,.0f}</strong>")
-                                            except (ValueError, TypeError):
-                                                _parts.append(f"{_col}: <strong>{_val}</strong>")
+                                        _parts = [
+                                            f"{_col}: <strong>{_fmt_val(_col, _val)}</strong>"
+                                            for _col, _val in zip(_df_ans.columns, _row)
+                                        ]
                                         _row_texts.append("&nbsp;&nbsp;|&nbsp;&nbsp;".join(_parts))
                                     _ans_text = "<br>".join(_row_texts)
                             except Exception as _e:
