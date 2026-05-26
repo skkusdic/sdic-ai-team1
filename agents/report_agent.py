@@ -2,110 +2,16 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fpdf import FPDF
-from fpdf.enums import XPos, YPos
-
-FONT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts", "NanumGothic.ttf")
-
-
-class KoreanPDF(FPDF):
-    def __init__(self, company: str = ""):
-        super().__init__()
-        self.company = company
-        self.add_font("NanumGothic", "", FONT_PATH)
-
-    def header(self):
-        self.set_font("NanumGothic", size=10)
-        self.set_text_color(120, 120, 120)
-        self.cell(0, 8, f"{self.company} 기업 분석 리포트", align="L",
-                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_draw_color(200, 200, 200)
-        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
-        self.ln(4)
-        self.set_text_color(0, 0, 0)
-
-    def footer(self):
-        self.set_y(-15)
-        self.set_font("NanumGothic", size=9)
-        self.set_text_color(120, 120, 120)
-        self.cell(0, 10, f"{self.page_no()} 페이지", align="C",
-                  new_x=XPos.RIGHT, new_y=YPos.TOP)
-
-
-def generate_pdf(company: str, financials: dict, analysis: str) -> str:
-    pdf = KoreanPDF(company=company)
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-
-    # 제목
-    pdf.set_font("NanumGothic", size=18)
-    pdf.cell(0, 14, f"{company} 기업 분석 리포트", align="C",
-             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(4)
-
-    # 1. 재무 데이터 5개년 표
-    pdf.set_font("NanumGothic", size=13)
-    pdf.cell(0, 10, "1. 5개년 재무 데이터", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(2)
-
-    if financials:
-        col_w = [22, 38, 38, 38]
-        headers = ["연도", "매출액(억원)", "영업이익(억원)", "순이익(억원)"]
-
-        # 표 헤더
-        pdf.set_fill_color(240, 240, 240)
-        pdf.set_font("NanumGothic", size=10)
-        for i, h in enumerate(headers):
-            pdf.cell(col_w[i], 9, h, border=1, align="C", fill=True,
-                     new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.ln()
-
-        # 표 데이터
-        for year in sorted(financials.keys()):
-            d = financials[year]
-            row = [
-                str(year),
-                f"{d.get('매출액', 0):,}",
-                f"{d.get('영업이익', 0):,}",
-                f"{d.get('순이익', 0):,}",
-            ]
-            for i, val in enumerate(row):
-                pdf.cell(col_w[i], 9, val, border=1, align="C",
-                         new_x=XPos.RIGHT, new_y=YPos.TOP)
-            pdf.ln()
-    else:
-        pdf.set_font("NanumGothic", size=10)
-        pdf.cell(0, 8, "  재무 데이터 없음", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-    pdf.ln(6)
-
-    # 2. Claude 분석
-    pdf.set_font("NanumGothic", size=13)
-    pdf.cell(0, 10, "2. Claude 분석", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(2)
-    pdf.set_font("NanumGothic", size=10)
-
-    if analysis:
-        for line in analysis.split("\n"):
-            line = line.strip()
-            if line:
-                pdf.multi_cell(0, 7, line, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.ln(1)
-    else:
-        pdf.cell(0, 8, "  분석 결과 없음", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-    pdf_filename = f"{company}_report.pdf"
-    pdf_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), pdf_filename)
-    pdf.output(pdf_path)
-    return pdf_path
+# report.py의 generate_report()를 사용 (Report Lead 담당)
+from report import generate_report
 
 
 def run_report_agent(state: dict) -> dict:
-    company = state.get("company", "기업")
+    company    = state.get("company", "기업")
     financials = state.get("financials", {})
-    analysis = state.get("analysis", "")
+    analysis   = state.get("analysis", "")
 
-    pdf_path = generate_pdf(company, financials, analysis)
+    pdf_path = generate_report(company, financials, analysis)
     return {**state, "pdf_path": pdf_path}
 
 
@@ -124,10 +30,23 @@ if __name__ == "__main__":
             2024: {"매출액": 289000, "영업이익": 38900, "순이익": 31200},
             2025: {"매출액": 320000, "영업이익": 42000, "순이익": 34500},
         },
-        "analysis": "이 기업의 영업이익률은 13.1%로 안정적인 수익 구조를 유지하고 있습니다.\n"
-                    "5개년 매출 성장률은 연평균 약 16.4%로 꾸준한 성장세를 보이고 있습니다.\n"
-                    "영업이익은 2021년 대비 2025년 약 2.3배 증가하였으며, 수익성이 개선되는 추세입니다.\n"
-                    "순이익률 역시 전반적으로 상승하고 있어 재무 건전성이 양호합니다.",
+        "analysis": """\
+1. 주요 사업 영역
+에이피알(APR)은 뷰티·패션 브랜드 포트폴리오를 운영하는 글로벌 K뷰티 기업입니다.
+피부 관리 디바이스, 스킨케어, 색조 화장품 등 다양한 카테고리를 보유하고 있습니다.
+
+2. 핵심 제품·서비스
+메디큐브, 에이프릴스킨, 포맨트, 아떼, NONFICTION 등 다수의 독립 브랜드를 운영합니다.
+특히 메디큐브 AGE-R 시리즈는 홈케어 뷰티 디바이스 시장에서 높은 인지도를 확보하고 있습니다.
+
+3. 고객 및 시장
+MZ세대를 핵심 타깃으로 하는 글로벌 K뷰티 시장을 공략하고 있습니다.
+일본, 미국, 동남아시아를 중심으로 해외 소비자 기반을 빠르게 확장 중입니다.
+
+4. 성장 전략
+글로벌 시장 확장 및 디지털 채널 강화를 통해 지속 성장을 추구합니다.
+D2C 비중을 높여 수익성을 개선하고 있습니다.
+""",
     }
 
     print("보고서 생성 시작...")
