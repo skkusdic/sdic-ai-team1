@@ -10,3 +10,4 @@ joblib
 numpy
 beautifulsoup4
 finance-datareader
+matplotlib
