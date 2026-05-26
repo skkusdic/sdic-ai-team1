@@ -1603,24 +1603,24 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             _df_ans = item["df"]
 
                             def _fmt_val(col, val):
-                                """컬럼명에 따라 값 포맷 결정."""
+                                """컬럼명에 따라 값 포맷 결정.
+                                DB 숫자는 백만원 금액 또는 % 비율뿐이므로
+                                year/연도 → 정수, %계열 → %, 그 외 → 원"""
                                 import math as _math
                                 if val is None:
-                                    return "-"
+                                    return "데이터 없음"
                                 try:
                                     _fv = float(val)
                                     if _math.isnan(_fv):
-                                        return "-"
-                                    # 연도 컬럼 — 쉼표 없이 정수 그대로
+                                        return "데이터 없음"
+                                    # 연도 컬럼 — 쉼표 없이 정수
                                     if col.lower() in ("year", "연도"):
                                         return str(int(_fv))
-                                    # % 키워드를 먼저 검사 — "영업이익률"처럼 "이익"+"률" 동시 포함 시 %로 처리
-                                    elif any(k in col for k in ["율", "률", "성장"]):
+                                    # % 비율 컬럼
+                                    if any(k in col for k in ["율", "률", "성장", "rate", "margin"]):
                                         return f"{_fv:.2f}%"
-                                    elif any(k in col for k in ["액", "이익", "원가", "비용", "판관비"]):
-                                        return f"{_fv:,.0f}원"
-                                    else:
-                                        return f"{_fv:,.0f}"
+                                    # 그 외 모든 숫자 → 백만원 금액
+                                    return f"{_fv:,.0f}원"
                                 except (ValueError, TypeError):
                                     return str(val)
 
