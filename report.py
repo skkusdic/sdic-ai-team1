@@ -418,19 +418,17 @@ class ReportPDF(FPDF):
         )
         fig.update_yaxes(gridcolor="#e8e8e8", gridwidth=1)
 
-        # ── Plotly → PNG → PDF 삽입 ─────────────────────────────────────────
-        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-        try:
-            fig.write_image(tmp.name, format="png", scale=2)
-            tmp.close()
+        # ── Plotly → PNG(BytesIO) → PDF 삽입 ────────────────────────────────
+        # Windows에서 임시 파일 잠금(WinError 32) 을 피하기 위해
+        # 디스크 파일 대신 메모리 버퍼(BytesIO)를 사용한다.
+        img_bytes = fig.to_image(format="png", scale=2)
+        buf = io.BytesIO(img_bytes)
 
-            img_w = self.eff_w
-            self.image(tmp.name, x=self.l_margin, y=self.get_y(), w=img_w)
-            # height=500, width=900 비율로 PDF 높이 계산
-            img_h = img_w * (500 / 900)
-            self.set_y(self.get_y() + img_h + 6)
-        finally:
-            os.unlink(tmp.name)
+        img_w = self.eff_w
+        self.image(buf, x=self.l_margin, y=self.get_y(), w=img_w)
+        # height=500, width=900 비율로 PDF 높이 계산
+        img_h = img_w * (500 / 900)
+        self.set_y(self.get_y() + img_h + 6)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 섹션 3 — Claude 기업 분석 (앱 Claude 분석 탭과 완전 동일한 파싱+스타일)

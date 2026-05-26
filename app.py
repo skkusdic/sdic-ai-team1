@@ -1549,7 +1549,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
             if st.session_state.qa_history:
                 st.markdown("---")
-                for item in st.session_state.qa_history:
+                for _qa_idx, item in enumerate(st.session_state.qa_history):
                     st.markdown(
                         f"<div style='margin-top:24px;'>"
                         f"<div style='font-size:11px; color:#aaa; margin-bottom:6px; letter-spacing:0.04em;'>입력된 질문</div>"
@@ -1650,7 +1650,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 unsafe_allow_html=True,
                             )
 
-                    st.markdown("")
+                    if _qa_idx < len(st.session_state.qa_history) - 1:
+                        st.markdown(
+                            "<div style='height:1px; background:#2e7d32; opacity:0.25; margin:28px 0 0 0;'></div>",
+                            unsafe_allow_html=True,
+                        )
 
             st.markdown('</div>', unsafe_allow_html=True)
 
