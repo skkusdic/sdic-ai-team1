@@ -497,6 +497,13 @@ class ReportPDF(FPDF):
     # ═══════════════════════════════════════════════════════════════════════════
     # Claude 분석 텍스트 파싱 → 6개 섹션
     # ═══════════════════════════════════════════════════════════════════════════
+    @staticmethod
+    def _strip_markdown(text: str) -> str:
+        """마크다운 기호(**, *, #) 제거"""
+        t = re.sub(r'\*+([^*\n]+)\*+', r'\1', text)
+        t = re.sub(r'#+\s*', '', t)
+        return t.strip()
+
     def _parse_analysis(self, analysis: str) -> list:
         sections = [""] * 6
         # 번호+제목 패턴으로 분리
@@ -505,7 +512,7 @@ class ReportPDF(FPDF):
             for i, p in enumerate(parts[:6]):
                 # 첫 줄(제목) 제거하고 내용만 추출
                 body = re.sub(r"^\d+[\.\)、]\s.*?\n", "", p, count=1).strip()
-                sections[i] = body or p.strip()
+                sections[i] = self._strip_markdown(body or p.strip())
             return sections
 
         # 키워드 기반 파싱 (fallback)
@@ -530,7 +537,7 @@ class ReportPDF(FPDF):
         if all(s == "" for s in sections):
             sections[0] = analysis
 
-        return [s.strip() for s in sections]
+        return [self._strip_markdown(s.strip()) for s in sections]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

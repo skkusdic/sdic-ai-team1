@@ -1364,10 +1364,7 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                     "1": "주요 사업 영역",
                     "2": "핵심 제품·서비스",
                     "3": "고객 및 시장",
-                    "4": "경쟁 환경",
-                    "5": "성장 전략",
-                    "6": "사업 전략과 재무 성과 연계",
-                    "7": "종합 의견",
+                    "4": "성장 전략",
                 }
 
                 def _parse_sections(text):
@@ -1432,20 +1429,17 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
                 def _render_sections(sections):
                     _html = ''
-                    _box_idx = 0
                     for _i, (_num, _title, _body) in enumerate(sections):
                         _mt = '28px' if _i > 0 else '4px'
                         _html += (
                             f'<p style="{_SUBTITLE} margin-top:{_mt};">'
                             f'{_num}. {_title}</p>'
                         )
-                        for _sent in _split_sentences(_body):
-                            _td = f"{_box_idx * 0.07:.2f}s"
-                            _html += (
-                                f'<div style="{_SENT_BOX} animation:sectionFadeUp 0.35s ease {_td} both;">'
-                                f'<p style="{_SENT_TXT}">{_inline_html(_sent)}</p></div>'
-                            )
-                            _box_idx += 1
+                        _td = f"{_i * 0.1:.2f}s"
+                        _html += (
+                            f'<div style="{_SENT_BOX} animation:sectionFadeUp 0.35s ease {_td} both;">'
+                            f'<p style="{_SENT_TXT}">{_inline_html(_body)}</p></div>'
+                        )
                     return _html
 
                 if _sections:
@@ -1468,20 +1462,27 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             _fb_i += 2
                         st.markdown(_render_sections(_fb_secs), unsafe_allow_html=True)
                     else:
-                        # 진짜 fallback: 제목성 줄 제외하고 문장 박스만
-                        _sents = [
-                            s for s in _split_sentences(_clean)
-                            if not _re.match(r'^\d+\.', s) and len(s) > 15
-                        ]
-                        _html = ''
-                        for _si, _sent in enumerate(_sents):
-                            _td = f"{_si * 0.07:.2f}s"
-                            _html += (
-                                f'<div style="{_SENT_BOX} animation:sectionFadeUp 0.35s ease {_td} both;">'
-                                f'<p style="{_SENT_TXT}">{_inline_html(_sent)}</p></div>'
-                            )
+                        # 진짜 fallback: 전체 텍스트를 하나의 박스로
+                        _html = (
+                            f'<div style="{_SENT_BOX} animation:sectionFadeUp 0.35s ease 0s both;">'
+                            f'<p style="{_SENT_TXT}">{_inline_html(_clean)}</p></div>'
+                        )
                         st.markdown(_html, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
+
+            # ── PDF 다운로드 (Claude 분석 탭 안) ──
+            if pdf_path and os.path.exists(pdf_path):
+                st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
+                with open(pdf_path, "rb") as f:
+                    _pdf_c1, _pdf_c2, _pdf_c3 = st.columns([2, 1, 2])
+                    with _pdf_c2:
+                        st.download_button(
+                            label="PDF 리포트 다운로드  ↓",
+                            data=f,
+                            file_name=f"{company_name}_재무분석.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
 
         with tab3:
             st.markdown('<div class="fade-section">', unsafe_allow_html=True)
@@ -2426,20 +2427,6 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                 st.caption(f"상대가치 분석 로드 실패: {_e}")
 
             st.markdown('</div>', unsafe_allow_html=True)
-
-        # ── PDF 다운로드 (탭 밖) ──
-        st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
-        if pdf_path and os.path.exists(pdf_path):
-            with open(pdf_path, "rb") as f:
-                _pdf_c1, _pdf_c2, _pdf_c3 = st.columns([2, 1, 2])
-                with _pdf_c2:
-                    st.download_button(
-                        label="PDF 리포트 다운로드  ↓",
-                        data=f,
-                        file_name=f"{company_name}_재무분석.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                    )
 
         st.markdown('<div style="margin-top:48px;"></div>', unsafe_allow_html=True)
         st.markdown("""
