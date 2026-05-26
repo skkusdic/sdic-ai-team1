@@ -3,13 +3,9 @@ import os
 import re
 import tempfile
 import anthropic
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
+import plotly.graph_objects as go
 from fpdf import FPDF, XPos, YPos
 from dotenv import load_dotenv
-
-matplotlib.use("Agg")  # GUI 없는 백엔드
 
 load_dotenv()
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -31,29 +27,6 @@ WHITE      = (255, 255, 255)
 _FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
 
-# ── matplotlib 한글 폰트 설정 ─────────────────────────────────────────────────
-def _setup_mpl_font():
-    """matplotlib 한글 폰트 설정 (Pretendard → NanumGothic → 시스템 폴백)."""
-    candidates = [
-        os.path.join(_FONT_DIR, "Pretendard-Regular.ttf"),
-        os.path.join(_FONT_DIR, "NanumGothic.ttf"),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            fm.fontManager.addfont(path)
-            prop = fm.FontProperties(fname=path)
-            matplotlib.rcParams["font.family"] = prop.get_name()
-            matplotlib.rcParams["axes.unicode_minus"] = False
-            return
-    # 시스템 폰트 폴백
-    for name in ["Apple SD Gothic Neo", "Malgun Gothic", "DejaVu Sans"]:
-        if any(name in f.name for f in fm.fontManager.ttflist):
-            matplotlib.rcParams["font.family"] = name
-            matplotlib.rcParams["axes.unicode_minus"] = False
-            return
-
-
-_setup_mpl_font()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -393,66 +366,68 @@ class ReportPDF(FPDF):
     # 섹션 2 — 매출액·영업이익·순이익 추이 그래프
     # ═══════════════════════════════════════════════════════════════════════════
     def draw_trend_chart(self, financials: dict):
-        """matplotlib으로 추이 그래프를 그려 PNG로 저장 후 PDF에 삽입."""
+        """app.py 재무 데이터 탭과 동일한 Plotly 차트를 PNG로 내보내 PDF에 삽입."""
         if not financials:
             return
 
-        years = sorted(financials.keys(), key=lambda y: int(str(y)))
-        rev_vals = [financials[y].get("매출액",   0) / 100 for y in years]  # 억원
-        op_vals  = [financials[y].get("영업이익", 0) / 100 for y in years]
-        net_vals = [financials[y].get("순이익",   0) / 100 for y in years]
+        years     = sorted(financials.keys(), key=lambda y: int(str(y)))
         yr_labels = [str(y) for y in years]
+        rev_vals  = [financials[y].get("매출액",   0) for y in years]
+        op_vals   = [financials[y].get("영업이익", 0) for y in years]
+        net_vals  = [financials[y].get("순이익",   0) for y in years]
 
-        # ── 그래프 생성 ──────────────────────────────────────────────────────
-        fig, ax = plt.subplots(figsize=(9, 3.8))
-        fig.patch.set_facecolor("white")
-        ax.set_facecolor("#f9fafb")
+        _bar_w = 0.2
+        _bar_clrs = ["#1b5e20", "#4caf50", "#aed581"]
 
-        x = range(len(yr_labels))
-        bar_w = 0.28
+        # ── app.py 와 동일한 Plotly 트레이스 구성 ────────────────────────────
+        bar_traces = [
+            go.Bar(name="매출액",   x=yr_labels, y=rev_vals, marker_color="#1b5e20", width=_bar_w, showlegend=True),
+            go.Bar(name="영업이익", x=yr_labels, y=op_vals,  marker_color="#4caf50", width=_bar_w, showlegend=True),
+            go.Bar(name="순이익",   x=yr_labels, y=net_vals, marker_color="#aed581", width=_bar_w, showlegend=True),
+        ]
+        trend_lines = [
+            go.Scatter(name="매출액 추이선",   x=yr_labels, y=rev_vals,
+                       mode="lines+markers",
+                       line=dict(color="#1b5e20", width=2.5),
+                       marker=dict(size=10, color="#1b5e20", line=dict(width=2, color="white")),
+                       showlegend=False),
+            go.Scatter(name="영업이익 추이선", x=yr_labels, y=op_vals,
+                       mode="lines+markers",
+                       line=dict(color="#4caf50", width=2.5),
+                       marker=dict(size=10, color="#4caf50", line=dict(width=2, color="white")),
+                       showlegend=False),
+            go.Scatter(name="순이익 추이선",   x=yr_labels, y=net_vals,
+                       mode="lines+markers",
+                       line=dict(color="#aed581", width=2.5),
+                       marker=dict(size=10, color="#aed581", line=dict(width=2, color="white")),
+                       showlegend=False),
+        ]
 
-        # 막대: 매출액
-        bars1 = ax.bar(
-            [i - bar_w for i in x], rev_vals, width=bar_w,
-            color="#1a4d3a", alpha=0.85, label="매출액", zorder=3
+        fig = go.Figure(data=bar_traces + trend_lines)
+        fig.update_layout(
+            barmode="overlay",
+            xaxis=dict(tickmode="array", tickvals=yr_labels, ticktext=yr_labels),
+            yaxis=dict(title="백만원"),
+            height=500,
+            width=900,
+            margin=dict(l=60, r=30, t=30, b=40),
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            font=dict(family="Arial, sans-serif", size=12),
+            legend=dict(orientation="v", x=1.02, y=1),
         )
-        # 막대: 영업이익
-        bars2 = ax.bar(
-            x, op_vals, width=bar_w,
-            color="#2d7a57", alpha=0.85, label="영업이익", zorder=3
-        )
-        # 꺾은선: 순이익
-        ax.plot(
-            [i + bar_w / 2 for i in x], net_vals,
-            color="#e07b39", marker="o", linewidth=2, markersize=5,
-            label="순이익", zorder=4
-        )
+        fig.update_yaxes(gridcolor="#e8e8e8", gridwidth=1)
 
-        ax.set_xticks(list(x))
-        ax.set_xticklabels(yr_labels, fontsize=10)
-        ax.yaxis.set_major_formatter(
-            matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:,.0f}")
-        )
-        ax.set_ylabel("억원", fontsize=9)
-        ax.legend(fontsize=9, loc="upper left", framealpha=0.9)
-        ax.grid(axis="y", linestyle="--", alpha=0.5, zorder=0)
-        ax.spines[["top", "right"]].set_visible(False)
-        ax.tick_params(labelsize=9)
-
-        plt.tight_layout(pad=0.8)
-
-        # ── 임시 PNG 저장 후 fpdf에 삽입 ────────────────────────────────────
+        # ── Plotly → PNG → PDF 삽입 ─────────────────────────────────────────
         tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
         try:
-            fig.savefig(tmp.name, dpi=160, bbox_inches="tight",
-                        facecolor="white")
-            plt.close(fig)
+            fig.write_image(tmp.name, format="png", scale=2)
             tmp.close()
 
             img_w = self.eff_w
             self.image(tmp.name, x=self.l_margin, y=self.get_y(), w=img_w)
-            # 이미지 높이 추정 (9:3.8 비율 → A4 너비 기준)
-            img_h = img_w * (3.8 / 9)
+            # height=500, width=900 비율로 PDF 높이 계산
+            img_h = img_w * (500 / 900)
             self.set_y(self.get_y() + img_h + 6)
         finally:
             os.unlink(tmp.name)
