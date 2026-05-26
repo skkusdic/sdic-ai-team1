@@ -122,6 +122,13 @@ def run_text2sql(query: str, company: str) -> tuple[str, pd.DataFrame | None, st
     - SQL 실행 실패: sql=생성된 SQL, dataframe=None, error=오류 메시지
     - 성공: sql=생성된 SQL, dataframe=결과 DataFrame (컬럼명 포함), error=None
     """
+    # 쿼리 전 최신(OFS+새컬럼) 데이터 보장 — 구버전 캐시면 DART 재수집
+    try:
+        from data import get_financials as _ensure
+        _ensure(company)
+    except Exception:
+        pass
+
     try:
         sql = _generate_sql(query, company)
     except Exception as e:

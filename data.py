@@ -200,24 +200,22 @@ def get_financials(company_name: str) -> dict:
     from db import init_db as _db_init, load_financials as _db_load, save_financials as _db_save
     _db_init()
 
-    # data/sdic.db 우선 확인 (data_version=2 이상 = OFS 기반 최신 데이터만 신뢰)
+    # data_version=2 = OFS + 새 컬럼 완비 데이터만 신뢰
     cached = _db_load(company_name)
     if cached:
         if not _load_from_db(company_name):
             _save_to_db(company_name, cached)
         return cached
 
-    # 구버전 financials.db → 신규 DB 마이그레이션
-    old = _load_from_db(company_name)
-    if old:
-        _db_save(company_name, old)
-        return old
-
+    # version=0 포함 구버전 캐시는 무시하고 DART 직접 재수집
+    # (migration 경로로 3컬럼 데이터가 version=2로 저장되는 버그 방지)
     raw = _fetch_from_dart(company_name)
     if not raw:
-        return {}
+        # DART 실패 시에만 구버전 data fallback
+        old = _load_from_db(company_name)
+        return old if old else {}
 
-    _db_save(company_name, raw)        # data/sdic.db (Text2SQL용)
+    _db_save(company_name, raw)        # data/sdic.db (Text2SQL용, version=2)
     _save_to_db(company_name, raw)     # financials.db (app.py 사이드바용)
     return raw
 
