@@ -136,10 +136,10 @@ def _fetch_from_dart(company_name: str) -> dict:
 
     result = {}
     for year in range(2021, 2026):
-        year_data = _extract_year(corp_code, year, "OFS")
+        year_data = _extract_year(corp_code, year, "CFS")  # 연결 우선
         if not year_data or not {"매출액", "영업이익", "순이익"}.issubset(year_data):
-            cfs = _extract_year(corp_code, year, "CFS")
-            for k, v in cfs.items():
+            ofs = _extract_year(corp_code, year, "OFS")    # 연결 없으면 별도 fallback
+            for k, v in ofs.items():
                 year_data.setdefault(k, v)
         if {"매출액", "영업이익", "순이익"}.issubset(year_data):
             result[year] = year_data
