@@ -21,7 +21,8 @@ _corp_list_cache = None
 _REVENUE_LABELS   = {"매출액", "영업수익", "수익(매출액)", "매출"}
 _OPERATING_LABELS = {"영업이익", "영업이익(손실)", "영업손실"}
 _NET_LABELS       = {"당기순이익", "당기순이익(손실)", "당기순손실",
-                     "연결당기순이익", "연결당기순이익(손실)", "연결당기순손실"}
+                     "연결당기순이익", "연결당기순이익(손실)", "연결당기순손실",
+                     "당기순이익(손실)(A)", "당기순이익(A)"}
 _COGS_LABELS      = {"매출원가", "제품매출원가", "상품매출원가", "원가합계", "영업원가", "매출원가(제품+상품)"}
 _GROSS_LABELS     = {"매출총이익", "매출총손익", "매출이익"}
 _SGA_LABELS       = {"판매비와관리비", "판매비와일반관리비", "판매관리비"}
@@ -222,14 +223,16 @@ def _load_from_db(company_name: str) -> dict:
 
 
 def get_financials(company_name: str) -> dict:
-    """6개년(2021~2025) 재무 데이터. 키는 정수 연도. 단위: 백만원."""
+    """5개년(2021~2025) 재무 데이터. 키는 정수 연도. 단위: 백만원."""
     from db import init_db as _db_init, load_financials as _db_load, save_financials as _db_save
     _db_init()
 
     # data_version=2 = OFS + 새 컬럼 완비 데이터만 신뢰
     cached = _db_load(company_name)
     if cached:
-        if not _load_from_db(company_name):
+        cached_years = set(cached.keys())
+        local_years  = set(_load_from_db(company_name).keys())
+        if cached_years != local_years:          # 연도 불일치 시 동기화
             _save_to_db(company_name, cached)
         return cached
 
