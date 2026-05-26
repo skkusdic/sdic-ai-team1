@@ -439,14 +439,21 @@ hr {
     background-color: #c8e6c9 !important;
 }
 
-/* st.warning() 연한 연두색 */
+/* st.warning() — 둥근 모서리 + 그린 테마 통일 */
 [data-testid="stAlert"]:has(svg[data-testid="stAlertDynamicIcon"]) {
     background-color: #f1f8e9 !important;
     border-color: #a5d6a7 !important;
+    border-radius: 12px !important;
+    border-width: 1px !important;
+    border-style: solid !important;
 }
 div[data-testid="stAlert"] {
     background-color: #f1f8e9 !important;
     border-color: #a5d6a7 !important;
+    border-radius: 12px !important;
+    border-width: 1px !important;
+    border-style: solid !important;
+    box-shadow: 0 2px 8px rgba(46,125,50,0.08) !important;
 }
 div[data-testid="stAlert"] svg {
     fill: #2e7d32 !important;
@@ -1949,7 +1956,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                     f'justify-content:space-between; padding:14px 20px;'
                                     f'border-radius:10px; background:{_gap_bg};'
                                     f'border:1px solid {_gap_color}44; margin-bottom:12px;">'
-                                    f'<div style="font-size:13px; color:#555;">'
+                                    f'<div style="font-size:14px; color:#555;">'
                                     f'현재가 <strong style="color:#1a1a1a;">{_current_price:,}원</strong>'
                                     f'&nbsp;→&nbsp;DCF 주당가치'
                                     f' <strong style="color:#1a1a1a;">{vps:,}원</strong>'
@@ -1969,7 +1976,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                         st.session_state[_gap_cache_key] = _explain_gap(dcf_inputs, result, assumptions)
                                 _gap_explain = st.session_state.get(_gap_cache_key, "")
                                 if _gap_explain:
-                                    with st.expander("왜 이런 차이가 날까요?", expanded=False):
+                                    with st.expander("이러한 차이가 발생하는 이유는?", expanded=False):
                                         st.markdown(_gap_explain)
                             except Exception:
                                 pass
@@ -2000,7 +2007,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                 f'<span style="font-size:12px; color:#888;">DART 자동 분류</span>'
                                 f'<span style="background:{_gp_clr}18; color:{_gp_clr};'
                                 f'border:1px solid {_gp_clr}55; border-radius:20px;'
-                                f'padding:3px 14px; font-size:13px; font-weight:600;">'
+                                f'padding:3px 14px; font-size:14px; font-weight:600;">'
                                 f'{_gp_korean}</span></div>',
                                 unsafe_allow_html=True,
                             )
@@ -2011,7 +2018,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                         def _dcf_card(label, value):
                             return (
                                 f'<div class="dcf-card">'
-                                f'<div style="font-size:13px; color:#999; letter-spacing:0.06em;'
+                                f'<div style="font-size:14px; color:#999; letter-spacing:0.06em;'
                                 f'text-transform:uppercase; margin-bottom:14px;">{label}</div>'
                                 f'<div style="font-size:26px; font-weight:600; color:#1a1a1a;'
                                 f'letter-spacing:-0.02em; white-space:nowrap;">{value}</div>'
@@ -2051,10 +2058,10 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                             f'background:{_roic_bg}; border:1px solid {_roic_clr}33; margin-bottom:8px;">'
                                             f'<div style="display:flex; justify-content:space-between;'
                                             f'align-items:center; margin-bottom:6px;">'
-                                            f'<span style="font-size:13px; font-weight:600; color:{_roic_clr};">ROIC vs WACC</span>'
-                                            f'<span style="font-size:15px; font-weight:700; color:{_roic_clr};">{_verdict}</span>'
+                                            f'<span style="font-size:14px; font-weight:600; color:{_roic_clr};">ROIC vs WACC</span>'
+                                            f'<span style="font-size:14px; font-weight:700; color:{_roic_clr};">{_verdict}</span>'
                                             f'</div>'
-                                            f'<div style="display:flex; gap:24px; font-size:13px; color:#555; flex-wrap:wrap;">'
+                                            f'<div style="display:flex; gap:24px; font-size:14px; color:#555; flex-wrap:wrap;">'
                                             f'<span>최신 ROIC <strong style="color:#1a1a1a;">{_latest_roic:.1%}</strong></span>'
                                             f'<span>평균 ROIC <strong style="color:#1a1a1a;">{_avg_roic:.1%}</strong></span>'
                                             f'<span>WACC <strong style="color:#1a1a1a;">{_roic_wacc:.1%}</strong></span>'
@@ -2081,7 +2088,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                             _ok_color = "#2e7d32" if _d["ok"] else "#dc2626"
                                             st.markdown(
                                                 f'<div style="display:flex; justify-content:space-between;'
-                                                f'padding:6px 0; border-bottom:1px solid #f0f0f0; font-size:13px;">'
+                                                f'padding:6px 0; border-bottom:1px solid #f0f0f0; font-size:14px;">'
                                                 f'<span style="color:{_ok_color}; font-weight:700; width:16px;">{_ok_icon}</span>'
                                                 f'<span style="flex:1; color:#333; margin-left:8px;">{_d["item"]}</span>'
                                                 f'<span style="color:#888; margin-left:12px;">{_d["earned_pts"]}/{_d["max_pts"]}pt</span>'
@@ -2230,12 +2237,12 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                     _gap_html = ""
                                     if _sgap is not None:
                                         _gc2 = "#2e7d32" if _sgap >= 0 else "#dc2626"
-                                        _gap_html = f'<div style="font-size:13px; color:{_gc2}; margin-top:8px;">{"↑" if _sgap>=0 else "↓"} vs 현재가 {_sgap:+.1%}</div>'
+                                        _gap_html = f'<div style="font-size:14px; color:{_gc2}; margin-top:8px;">{"↑" if _sgap>=0 else "↓"} vs 현재가 {_sgap:+.1%}</div>'
                                     with _card_col:
                                         st.markdown(
                                             f'<div style="background:{_sbg}; border:2px solid {_sclr};'
                                             f'border-radius:12px; padding:24px 16px; text-align:center; margin-bottom:12px;">'
-                                            f'<div style="font-size:13px; color:{_sclr}; font-weight:700;'
+                                            f'<div style="font-size:14px; color:{_sclr}; font-weight:700;'
                                             f'letter-spacing:0.06em; text-transform:uppercase; margin-bottom:12px;">{_SC_LBL[_skey]}</div>'
                                             f'<div style="font-size:26px; font-weight:700; color:#1a1a1a;">{_svt}</div>'
                                             f'<div style="font-size:12px; color:#666; margin-top:8px;">'
@@ -2253,22 +2260,25 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                     _rmin = min(_vps_vals.values()) * 0.85
                                     _rmax = max(_vps_vals.values()) * 1.15
                                     _fig_rng = go.Figure()
+                                    # 배경 범위 사각형 — 마커 높이에 맞춰 낮게
                                     if "bear" in _vps_vals and "bull" in _vps_vals:
-                                        _fig_rng.add_shape(type="rect", x0=_vps_vals["bear"], x1=_vps_vals["bull"], y0=0.3, y1=0.7, fillcolor="rgba(46,125,50,0.12)", line=dict(width=0))
+                                        _fig_rng.add_shape(type="rect", x0=_vps_vals["bear"], x1=_vps_vals["bull"], y0=0.1, y1=0.45, fillcolor="rgba(46,125,50,0.12)", line=dict(width=0))
+                                    # Bear / Base / Bull 수직선 + 마커 — 마커를 낮게(y=0.28) 두고 텍스트는 위로
                                     for _rk, (_rclr, _rlbl) in {"bear":("#4caf50","Bear"),"base":("#2e7d32","Base"),"bull":("#1b5e20","Bull")}.items():
                                         if _rk in _vps_vals:
-                                            _fig_rng.add_shape(type="line", x0=_vps_vals[_rk], x1=_vps_vals[_rk], y0=0.25, y1=0.75, line=dict(color=_rclr, width=2.5))
-                                            _fig_rng.add_trace(go.Scatter(x=[_vps_vals[_rk]], y=[0.5], mode="markers+text",
+                                            _fig_rng.add_shape(type="line", x0=_vps_vals[_rk], x1=_vps_vals[_rk], y0=0.08, y1=0.48, line=dict(color=_rclr, width=2.5))
+                                            _fig_rng.add_trace(go.Scatter(x=[_vps_vals[_rk]], y=[0.28], mode="markers+text",
                                                 marker=dict(size=14, color=_rclr),
                                                 text=[f"{_rlbl}<br>{_vps_vals[_rk]:,}원"],
                                                 textposition="top center", textfont=dict(size=11, color=_rclr), showlegend=False))
+                                    # 현재가 — textposition을 "top center"로 통일해 아래로 넘치지 않도록
                                     if _s_cur_p and _s_cur_p > 0:
-                                        _fig_rng.add_shape(type="line", x0=_s_cur_p, x1=_s_cur_p, y0=0.15, y1=0.85, line=dict(color="#f59e0b", width=2, dash="dash"))
-                                        _fig_rng.add_trace(go.Scatter(x=[_s_cur_p], y=[0.5], mode="markers+text",
+                                        _fig_rng.add_shape(type="line", x0=_s_cur_p, x1=_s_cur_p, y0=0.05, y1=0.52, line=dict(color="#f59e0b", width=2, dash="dash"))
+                                        _fig_rng.add_trace(go.Scatter(x=[_s_cur_p], y=[0.28], mode="markers+text",
                                             marker=dict(size=10, color="#f59e0b", symbol="diamond"),
                                             text=[f"현재가<br>{_s_cur_p:,}원"],
-                                            textposition="bottom center", textfont=dict(size=11, color="#b45309"), showlegend=False))
-                                    _fig_rng.update_layout(height=200, margin=dict(l=20,r=20,t=10,b=10),
+                                            textposition="top center", textfont=dict(size=11, color="#b45309"), showlegend=False))
+                                    _fig_rng.update_layout(height=300, margin=dict(l=30,r=80,t=85,b=45),
                                         xaxis=dict(range=[_rmin,_rmax], tickformat=",", ticksuffix="원", title="주당 가치 (원)"),
                                         yaxis=dict(visible=False, range=[0,1]), paper_bgcolor="white", plot_bgcolor="white")
                                     st.plotly_chart(_fig_rng, use_container_width=True)
@@ -2361,10 +2371,10 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                     st.markdown(
                                         f'<div style="padding:16px 20px; border-radius:10px;'
                                         f'background:#f8f9fa; border:1px solid #e0e0e0;">'
-                                        f'<div style="font-size:13px; color:#555; margin-bottom:8px;">'
+                                        f'<div style="font-size:14px; color:#555; margin-bottom:8px;">'
                                         f'현재 주가({_current_price:,}원) 기준 시장 내재 WACC</div>'
                                         f'<div style="font-size:26px; font-weight:700; color:{_idr_clr}; margin-bottom:10px;">{_idr:.2%}</div>'
-                                        f'<div style="font-size:13px; color:#666; line-height:1.7;">{_inote}</div>'
+                                        f'<div style="font-size:14px; color:#666; line-height:1.7;">{_inote}</div>'
                                         f'</div>',
                                         unsafe_allow_html=True,
                                     )
@@ -2394,7 +2404,7 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                             _sig   = _d["signal"]
                                             _sig_clr = {"Upside":"#1b5e20","Downside":"#dc2626","Neutral":"#f59e0b","N/A":"#888"}.get(_sig, "#888")
                                             st.metric(_label, f"{_val:.1f}x", delta=f"밴드 {_lo:.1f}x–{_hi:.1f}x")
-                                            st.markdown(f'<div style="font-size:13px;color:{_sig_clr};font-weight:700;">{_sig}</div>', unsafe_allow_html=True)
+                                            st.markdown(f'<div style="font-size:14px;color:{_sig_clr};font-weight:700;">{_sig}</div>', unsafe_allow_html=True)
                                             if _d.get("implied_price"):
                                                 st.caption(f"적정가 추정: {int(_d['implied_price']):,}원")
                             except Exception as _e:
