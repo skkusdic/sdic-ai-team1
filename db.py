@@ -32,11 +32,15 @@ def init_db():
         """)
         con.execute("""
             CREATE TABLE IF NOT EXISTS financials (
-                corp_name TEXT    NOT NULL,
-                year      INTEGER NOT NULL,
-                매출액    INTEGER DEFAULT 0,
-                영업이익  INTEGER DEFAULT 0,
-                순이익    INTEGER DEFAULT 0,
+                corp_name    TEXT    NOT NULL,
+                year         INTEGER NOT NULL,
+                매출액       INTEGER DEFAULT NULL,
+                영업이익     INTEGER DEFAULT NULL,
+                순이익       INTEGER DEFAULT NULL,
+                매출원가     INTEGER DEFAULT NULL,
+                매출총이익   INTEGER DEFAULT NULL,
+                판관비       INTEGER DEFAULT NULL,
+                data_version INTEGER DEFAULT 0,
                 PRIMARY KEY (corp_name, year),
                 FOREIGN KEY (corp_name) REFERENCES companies(corp_name)
             )
@@ -51,6 +55,15 @@ def init_db():
                 PRIMARY KEY (corp_name, year, section)
             )
         """)
+        for col in ["매출원가", "매출총이익", "판관비"]:
+            try:
+                con.execute(f'ALTER TABLE financials ADD COLUMN "{col}" INTEGER DEFAULT NULL')
+            except sqlite3.OperationalError:
+                pass
+        try:
+            con.execute("ALTER TABLE financials ADD COLUMN data_version INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         con.commit()
 
 
@@ -87,19 +100,26 @@ def save_financials(company_name: str, financials: dict):
         for year, d in financials.items():
             con.execute(
                 """
-                INSERT INTO financials (corp_name, year, 매출액, 영업이익, 순이익)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO financials (corp_name, year, 매출액, 영업이익, 순이익, 매출원가, 매출총이익, 판관비, data_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2)
                 ON CONFLICT(corp_name, year) DO UPDATE SET
-                    매출액   = excluded.매출액,
-                    영업이익 = excluded.영업이익,
-                    순이익   = excluded.순이익
+                    매출액       = excluded.매출액,
+                    영업이익     = excluded.영업이익,
+                    순이익       = excluded.순이익,
+                    매출원가     = COALESCE(excluded.매출원가,   financials.매출원가),
+                    매출총이익   = COALESCE(excluded.매출총이익, financials.매출총이익),
+                    판관비       = COALESCE(excluded.판관비,     financials.판관비),
+                    data_version = 2
                 """,
                 (
                     company_name,
                     int(year),
-                    d.get("매출액", 0),
-                    d.get("영업이익", 0),
-                    d.get("순이익", 0),
+                    d.get("매출액"),
+                    d.get("영업이익"),
+                    d.get("순이익"),
+                    d.get("매출원가"),
+                    d.get("매출총이익"),
+                    d.get("판관비"),
                 ),
             )
         con.commit()
@@ -108,18 +128,27 @@ def save_financials(company_name: str, financials: dict):
 def load_financials(company_name: str) -> dict | None:
     with _conn() as con:
         rows = con.execute(
-            "SELECT year, 매출액, 영업이익, 순이익 FROM financials WHERE corp_name = ? ORDER BY year",
+            """SELECT year, 매출액, 영업이익, 순이익, 매출원가, 매출총이익, 판관비, data_version
+               FROM financials WHERE corp_name = ? ORDER BY year""",
             (company_name,),
         ).fetchall()
     if not rows:
         return None
-    return {
-        row[0]: {"매출액": row[1], "영업이익": row[2], "순이익": row[3]}
-        for row in rows
-    }
+    # data_version < 2 = CFS 기반 구버전 → None 반환해서 DART 재수집 유도
+    if any((row[7] or 0) < 2 for row in rows):
+        return None
+    result = {}
+    for year, rev, op, net, cogs, gross, sga, _ in rows:
+        d = {"매출액": rev, "영업이익": op, "순이익": net}
+        if cogs  is not None: d["매출원가"]   = cogs
+        if gross is not None: d["매출총이익"] = gross
+        if sga   is not None: d["판관비"]     = sga
+        result[year] = d
+    return result
 
 
-def execute_sql(sql: str):
+def execute_sql(sql: str) -> tuple[list[str], list]:
+    """(컬럼명 리스트, 행 리스트) 반환."""
     stripped = sql.strip()
 
     if not re.match(r"^\s*SELECT\b", stripped, re.IGNORECASE):
@@ -133,7 +162,9 @@ def execute_sql(sql: str):
         raise ValueError(f"다중 statement는 허용되지 않습니다: {sql!r}")
 
     with _conn() as con:
-        return con.execute(stripped).fetchall()
+        cur = con.execute(stripped)
+        cols = [d[0] for d in (cur.description or [])]
+        return cols, cur.fetchall()
 
 
 if __name__ == "__main__":
@@ -165,7 +196,7 @@ if __name__ == "__main__":
     print("  ", load_financials("없는회사"))
 
     print("\n6. execute_sql — 허용: SELECT * FROM financials")
-    rows = execute_sql("SELECT * FROM financials WHERE corp_name = '에이피알'")
+    _, rows = execute_sql("SELECT * FROM financials WHERE corp_name = '에이피알'")
     for row in rows:
         print("  ", row)
 

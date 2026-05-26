@@ -18,9 +18,12 @@ dart.set_api_key(DART_API_KEY)
 
 _corp_list_cache = None
 
-_REVENUE_LABELS = {"매출액", "영업수익", "수익(매출액)", "매출"}
+_REVENUE_LABELS   = {"매출액", "영업수익", "수익(매출액)", "매출"}
 _OPERATING_LABELS = {"영업이익", "영업이익(손실)", "영업손실"}
-_NET_LABELS = {"당기순이익", "당기순이익(손실)", "당기순손실"}
+_NET_LABELS       = {"당기순이익", "당기순이익(손실)", "당기순손실"}
+_COGS_LABELS      = {"매출원가", "제품매출원가", "상품매출원가", "원가합계", "영업원가", "매출원가(제품+상품)"}
+_GROSS_LABELS     = {"매출총이익", "매출총손익", "매출이익"}
+_SGA_LABELS       = {"판매비와관리비", "판매비와일반관리비", "판매관리비"}
 
 
 def _get_corp_list():
@@ -126,6 +129,12 @@ def _extract_year(corp_code: str, year: int, fs_div: str) -> dict:
             data["영업이익"] = val
         elif nm in _NET_LABELS and "순이익" not in data:
             data["순이익"] = val
+        elif nm in _COGS_LABELS and "매출원가" not in data:
+            data["매출원가"] = val
+        elif nm in _GROSS_LABELS and "매출총이익" not in data:
+            data["매출총이익"] = val
+        elif nm in _SGA_LABELS and "판관비" not in data:
+            data["판관비"] = val
     return data
 
 
@@ -136,10 +145,10 @@ def _fetch_from_dart(company_name: str) -> dict:
 
     result = {}
     for year in range(2021, 2026):
-        year_data = _extract_year(corp_code, year, "CFS")  # 연결 우선
+        year_data = _extract_year(corp_code, year, "OFS")  # 별도 우선 (DART 기본 표시 기준)
         if not year_data or not {"매출액", "영업이익", "순이익"}.issubset(year_data):
-            ofs = _extract_year(corp_code, year, "OFS")    # 연결 없으면 별도 fallback
-            for k, v in ofs.items():
+            cfs = _extract_year(corp_code, year, "CFS")    # 별도 없으면 연결 fallback
+            for k, v in cfs.items():
                 year_data.setdefault(k, v)
         if {"매출액", "영업이익", "순이익"}.issubset(year_data):
             result[year] = year_data
@@ -187,18 +196,30 @@ def _load_from_db(company_name: str) -> dict:
 
 
 def get_financials(company_name: str) -> dict:
-    """6개년(2020~2025) 재무 데이터. 키는 정수 연도. 단위: 백만원."""
-    cached = _load_from_db(company_name)
+    """6개년(2021~2025) 재무 데이터. 키는 정수 연도. 단위: 백만원."""
+    from db import init_db as _db_init, load_financials as _db_load, save_financials as _db_save
+    _db_init()
+
+    # data/sdic.db 우선 확인 (data_version=2 이상 = OFS 기반 최신 데이터만 신뢰)
+    cached = _db_load(company_name)
     if cached:
+        if not _load_from_db(company_name):
+            _save_to_db(company_name, cached)
         return cached
+
+    # 구버전 financials.db → 신규 DB 마이그레이션
+    old = _load_from_db(company_name)
+    if old:
+        _db_save(company_name, old)
+        return old
 
     raw = _fetch_from_dart(company_name)
     if not raw:
         return {}
 
-    data = {year: metrics for year, metrics in raw.items()}
-    _save_to_db(company_name, data)
-    return data
+    _db_save(company_name, raw)        # data/sdic.db (Text2SQL용)
+    _save_to_db(company_name, raw)     # financials.db (app.py 사이드바용)
+    return raw
 
 
 # ── 사업보고서 원문 텍스트 추출 ────────────────────────────────────────────
