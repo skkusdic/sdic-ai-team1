@@ -160,6 +160,7 @@ def classify_growth_profile(
         return {
             "profile":             "insufficient_data",
             "historical_cagr":     None,
+            "effective_cagr":      0.05,
             "yearly_growth_rates": [0.05] * 5,
             "volatile":            False,
             "note": "데이터 부족으로 기본 성장률 5%를 사용했습니다.",
