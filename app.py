@@ -2260,27 +2260,27 @@ DCF(Discounted Cash Flow)는 기업이 미래에 창출할 현금을 현재 가�
                                     _rmin = min(_vps_vals.values()) * 0.85
                                     _rmax = max(_vps_vals.values()) * 1.15
                                     _fig_rng = go.Figure()
-                                    # 배경 범위 사각형 — 마커 높이에 맞춰 낮게
+                                    # 배경 범위 사각형 — 하단에 좁게 배치 (마커/텍스트와 겹치지 않도록)
                                     if "bear" in _vps_vals and "bull" in _vps_vals:
-                                        _fig_rng.add_shape(type="rect", x0=_vps_vals["bear"], x1=_vps_vals["bull"], y0=0.1, y1=0.45, fillcolor="rgba(46,125,50,0.12)", line=dict(width=0))
-                                    # Bear / Base / Bull 수직선 + 마커 — 마커를 낮게(y=0.28) 두고 텍스트는 위로
+                                        _fig_rng.add_shape(type="rect", x0=_vps_vals["bear"], x1=_vps_vals["bull"], y0=0.05, y1=0.28, fillcolor="rgba(46,125,50,0.12)", line=dict(width=0))
+                                    # Bear / Base / Bull 수직선 + 마커 — 마커를 박스 위(y=0.65)에 두고 텍스트는 위로
                                     for _rk, (_rclr, _rlbl) in {"bear":("#4caf50","Bear"),"base":("#2e7d32","Base"),"bull":("#1b5e20","Bull")}.items():
                                         if _rk in _vps_vals:
-                                            _fig_rng.add_shape(type="line", x0=_vps_vals[_rk], x1=_vps_vals[_rk], y0=0.08, y1=0.48, line=dict(color=_rclr, width=2.5))
-                                            _fig_rng.add_trace(go.Scatter(x=[_vps_vals[_rk]], y=[0.28], mode="markers+text",
+                                            _fig_rng.add_shape(type="line", x0=_vps_vals[_rk], x1=_vps_vals[_rk], y0=0.05, y1=0.67, line=dict(color=_rclr, width=2.5))
+                                            _fig_rng.add_trace(go.Scatter(x=[_vps_vals[_rk]], y=[0.68], mode="markers+text",
                                                 marker=dict(size=14, color=_rclr),
                                                 text=[f"{_rlbl}<br>{_vps_vals[_rk]:,}원"],
                                                 textposition="top center", textfont=dict(size=11, color=_rclr), showlegend=False))
-                                    # 현재가 — textposition을 "top center"로 통일해 아래로 넘치지 않도록
+                                    # 현재가 — 마커를 박스 위(y=0.65)에 두고 텍스트는 위로
                                     if _s_cur_p and _s_cur_p > 0:
-                                        _fig_rng.add_shape(type="line", x0=_s_cur_p, x1=_s_cur_p, y0=0.05, y1=0.52, line=dict(color="#f59e0b", width=2, dash="dash"))
-                                        _fig_rng.add_trace(go.Scatter(x=[_s_cur_p], y=[0.28], mode="markers+text",
+                                        _fig_rng.add_shape(type="line", x0=_s_cur_p, x1=_s_cur_p, y0=0.05, y1=0.67, line=dict(color="#f59e0b", width=2, dash="dash"))
+                                        _fig_rng.add_trace(go.Scatter(x=[_s_cur_p], y=[0.68], mode="markers+text",
                                             marker=dict(size=10, color="#f59e0b", symbol="diamond"),
                                             text=[f"현재가<br>{_s_cur_p:,}원"],
                                             textposition="top center", textfont=dict(size=11, color="#b45309"), showlegend=False))
-                                    _fig_rng.update_layout(height=300, margin=dict(l=30,r=80,t=85,b=45),
+                                    _fig_rng.update_layout(height=300, margin=dict(l=30,r=80,t=90,b=45),
                                         xaxis=dict(range=[_rmin,_rmax], tickformat=",", ticksuffix="원", title="주당 가치 (원)"),
-                                        yaxis=dict(visible=False, range=[0,1]), paper_bgcolor="white", plot_bgcolor="white")
+                                        yaxis=dict(visible=False, range=[0,1.35]), paper_bgcolor="white", plot_bgcolor="white")
                                     st.plotly_chart(_fig_rng, use_container_width=True)
 
                                 # 시나리오 상세 표
