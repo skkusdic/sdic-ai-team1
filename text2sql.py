@@ -115,12 +115,42 @@ def _generate_sql(query: str, company: str) -> str:
     return sql.rstrip(";").strip()
 
 
-def run_text2sql(query: str, company: str) -> tuple[str, pd.DataFrame | None, str | None]:
+def _analysis_fallback(query: str, company: str) -> str | None:
+    """DB 전체 데이터를 컨텍스트로 Claude에게 분석형 질문 답변 생성. 실패 시 None."""
+    safe = company.replace("'", "''")
+    fallback_sql = (
+        f"SELECT year, 매출액, 영업이익, 순이익, 매출원가, 매출총이익, 판관비 "
+        f"FROM financials WHERE corp_name = '{safe}' ORDER BY year"
+    )
+    try:
+        cols, rows = execute_sql(fallback_sql)
+        if not rows:
+            return None
+        df = pd.DataFrame(rows, columns=cols)
+        # 영업이익률 파생 컬럼 추가
+        df["영업이익률(%)"] = df.apply(
+            lambda r: round(float(r["영업이익"]) * 100.0 / float(r["매출액"]), 2)
+            if r["매출액"] else None,
+            axis=1,
+        )
+        context = df.to_string(index=False)
+        return ask(
+            f"{company}의 연도별 재무 데이터 (단위: 백만원):\n\n{context}\n\n"
+            f"위 데이터를 근거로 다음 질문에 답하세요:\n{query}\n\n"
+            "구체적 연도·수치를 인용하며 한국어로 간결하게 답하세요.",
+            max_tokens=500,
+        ).strip()
+    except Exception:
+        return None
+
+
+def run_text2sql(query: str, company: str) -> tuple[str, pd.DataFrame | None, str | None, str | None]:
     """
-    (sql, dataframe, error) 반환.
-    - 스키마 범위 초과: sql="", dataframe=None, error=안내 메시지
-    - SQL 실행 실패: sql=생성된 SQL, dataframe=None, error=오류 메시지
-    - 성공: sql=생성된 SQL, dataframe=결과 DataFrame (컬럼명 포함), error=None
+    (sql, dataframe, error, analysis) 반환.
+    - 스키마 범위 초과: ("", None, 안내메시지, None)
+    - 분석형 질문: ("", None, None, Claude분석텍스트)
+    - SQL 실행 실패: (sql, None, 오류메시지, None)
+    - 성공: (sql, DataFrame, None, None)
     """
     # 쿼리 전 최신(OFS+새컬럼) 데이터 보장 — 구버전 캐시면 DART 재수집
     try:
@@ -132,24 +162,27 @@ def run_text2sql(query: str, company: str) -> tuple[str, pd.DataFrame | None, st
     try:
         sql = _generate_sql(query, company)
     except Exception as e:
-        return "", None, f"SQL 변환 실패: {e}"
+        return "", None, f"SQL 변환 실패: {e}", None
 
-    # 스키마 한계로 답 불가
+    # 스키마 한계로 답 불가 (부채비율·PER 등 DB에 없는 지표)
     if sql.upper().startswith("NO_DATA:"):
-        return "", None, sql[8:].strip()
+        return "", None, sql[8:].strip(), None
 
-    # SQL이 아닌 자연어 응답 방어
+    # SQL이 아닌 자연어 → 분석형 질문으로 판단, DB 데이터 기반 Claude 답변
     if not re.match(r"^\s*SELECT\b", sql, re.IGNORECASE):
-        return sql, None, "현재 DB에는 매출액·영업이익·순이익·매출원가·매출총이익·판관비 데이터만 있습니다. 부채비율·PER·주가 등은 별도 탭을 이용해 주세요."
+        analysis = _analysis_fallback(query, company)
+        if analysis:
+            return "", None, None, analysis
+        return "", None, "현재 DB에는 매출액·영업이익·순이익·매출원가·매출총이익·판관비 데이터만 있습니다. 부채비율·PER·주가 등은 별도 탭을 이용해 주세요.", None
 
     try:
         cols, rows = execute_sql(sql)
         df = pd.DataFrame(rows, columns=cols if cols else None)
-        return sql, df, None
+        return sql, df, None, None
     except ValueError as e:
-        return sql, None, f"SQL 실행 거부: {e}"
+        return sql, None, f"SQL 실행 거부: {e}", None
     except Exception as e:
-        return sql, None, f"SQL 실행 실패: {e}"
+        return sql, None, f"SQL 실행 실패: {e}", None
 
 
 if __name__ == "__main__":
@@ -180,8 +213,10 @@ if __name__ == "__main__":
     for question, corp in tests:
         print(f"\n{'─'*60}")
         print(f"질문: {question}")
-        sql, df, error = run_text2sql(question, corp)
-        if error:
+        sql, df, error, analysis = run_text2sql(question, corp)
+        if analysis:
+            print(f"분석: {analysis}")
+        elif error:
             print(f"안내: {error}")
         else:
             print(f"SQL : {sql}")

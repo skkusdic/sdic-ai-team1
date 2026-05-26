@@ -1540,8 +1540,8 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             top_chunks, claude_answer = answer_with_rag(q, financials, company_name)
                             result = {"mode": "RAG", "q": q, "chunks": top_chunks, "answer": claude_answer}
                         else:
-                            sql, df_result, err = run_text2sql(q, company_name)
-                            result = {"mode": "Text2SQL", "q": q, "sql": sql, "df": df_result, "error": err}
+                            sql, df_result, err, analysis = run_text2sql(q, company_name)
+                            result = {"mode": "Text2SQL", "q": q, "sql": sql, "df": df_result, "error": err, "analysis": analysis}
                     except Exception as e:
                         result = {"mode": used_mode, "q": q, "error": str(e)}
 
@@ -1594,77 +1594,83 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                             unsafe_allow_html=True,
                         )
                     else:
-                        st.markdown("**생성된 SQL**")
-                        st.code(item["sql"], language="sql")
-                        if item.get("error"):
-                            st.error(f"실행 오류: {item['error']}")
-                        elif item["df"] is not None:
-                            # DataFrame → 숫자/텍스트 답변 변환 (컬럼명 기반 자동 포맷)
-                            _df_ans = item["df"]
+                        _answer_box = (
+                            "<div style='background-color:#f1f8f1; border:1px solid #c8e6c9; "
+                            "border-left:4px solid #2e7d32; border-radius:8px; "
+                            "padding:16px 20px; color:#1a1a1a; line-height:1.8;'>"
+                            "<p style='font-size:1.43rem; font-weight:700; color:#1a1a1a; "
+                            "letter-spacing:-0.01em; margin:0 0 10px 0;'>A.</p>"
+                            "<span style='font-size:15px;'>{body}</span></div>"
+                        )
+                        # 분석형 질문 — DB 데이터 기반 Claude 텍스트 답변
+                        if item.get("analysis"):
+                            st.markdown(
+                                "<div style='font-size:11px; color:#aaa; margin-bottom:6px; letter-spacing:0.04em;'>AI 답변 (데이터 분석)</div>",
+                                unsafe_allow_html=True,
+                            )
+                            st.markdown(
+                                _answer_box.format(body=item["analysis"]),
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            # 데이터 조회형 질문 — SQL + 결과 표시
+                            st.markdown("**생성된 SQL**")
+                            st.code(item["sql"], language="sql")
+                            if item.get("error"):
+                                st.error(f"실행 오류: {item['error']}")
+                            elif item["df"] is not None:
+                                # DataFrame → 숫자/텍스트 답변 변환 (컬럼명 기반 자동 포맷)
+                                _df_ans = item["df"]
 
-                            def _fmt_val(col, val):
-                                """컬럼명에 따라 값 포맷 결정.
-                                DB 숫자는 백만원 금액 또는 % 비율뿐이므로
-                                year/연도 → 정수, %계열 → %, 그 외 → 원"""
-                                import math as _math
-                                if val is None:
-                                    return "데이터 없음"
-                                try:
-                                    _fv = float(val)
-                                    if _math.isnan(_fv):
+                                def _fmt_val(col, val):
+                                    """컬럼명에 따라 값 포맷 결정.
+                                    DB 숫자는 백만원 금액 또는 % 비율뿐이므로
+                                    year/연도 → 정수, %계열 → %, 그 외 → 원"""
+                                    import math as _math
+                                    if val is None:
                                         return "데이터 없음"
-                                    # 연도 컬럼 — 쉼표 없이 정수
-                                    if col.lower() in ("year", "연도"):
-                                        return str(int(_fv))
-                                    # % 비율 컬럼
-                                    if any(k in col for k in ["율", "률", "성장", "rate", "margin"]):
-                                        return f"{_fv:.2f}%"
-                                    # 그 외 모든 숫자 → 백만원 금액
-                                    return f"{_fv:,.0f}원"
-                                except (ValueError, TypeError):
-                                    return str(val)
+                                    try:
+                                        _fv = float(val)
+                                        if _math.isnan(_fv):
+                                            return "데이터 없음"
+                                        if col.lower() in ("year", "연도"):
+                                            return str(int(_fv))
+                                        if any(k in col for k in ["율", "률", "성장", "rate", "margin"]):
+                                            return f"{_fv:.2f}%"
+                                        return f"{_fv:,.0f}원"
+                                    except (ValueError, TypeError):
+                                        return str(val)
 
-                            try:
-                                if len(_df_ans) == 1 and len(_df_ans.columns) == 1:
-                                    _col = _df_ans.columns[0]
-                                    _ans_text = _fmt_val(_col, _df_ans.iloc[0, 0])
-                                elif len(_df_ans) == 1:
-                                    _parts = [
-                                        f"{_col}: <strong>{_fmt_val(_col, _val)}</strong>"
-                                        for _col, _val in zip(_df_ans.columns, _df_ans.iloc[0])
-                                    ]
-                                    _ans_text = "&nbsp;&nbsp;|&nbsp;&nbsp;".join(_parts)
-                                else:
-                                    _row_texts = []
-                                    for _, _row in _df_ans.iterrows():
+                                try:
+                                    if len(_df_ans) == 1 and len(_df_ans.columns) == 1:
+                                        _col = _df_ans.columns[0]
+                                        _ans_text = _fmt_val(_col, _df_ans.iloc[0, 0])
+                                    elif len(_df_ans) == 1:
                                         _parts = [
                                             f"{_col}: <strong>{_fmt_val(_col, _val)}</strong>"
-                                            for _col, _val in zip(_df_ans.columns, _row)
+                                            for _col, _val in zip(_df_ans.columns, _df_ans.iloc[0])
                                         ]
-                                        _row_texts.append("&nbsp;&nbsp;|&nbsp;&nbsp;".join(_parts))
-                                    _ans_text = "<br>".join(_row_texts)
-                            except Exception as _e:
-                                _ans_text = str(_df_ans.to_dict())
+                                        _ans_text = "&nbsp;&nbsp;|&nbsp;&nbsp;".join(_parts)
+                                    else:
+                                        _row_texts = []
+                                        for _, _row in _df_ans.iterrows():
+                                            _parts = [
+                                                f"{_col}: <strong>{_fmt_val(_col, _val)}</strong>"
+                                                for _col, _val in zip(_df_ans.columns, _row)
+                                            ]
+                                            _row_texts.append("&nbsp;&nbsp;|&nbsp;&nbsp;".join(_parts))
+                                        _ans_text = "<br>".join(_row_texts)
+                                except Exception as _e:
+                                    _ans_text = str(_df_ans.to_dict())
 
-                            st.markdown(
-                                "<div style='font-size:11px; color:#aaa; margin-bottom:6px; letter-spacing:0.04em;'>AI 답변</div>",
-                                unsafe_allow_html=True,
-                            )
-                            st.markdown(
-                                f"<div style='"
-                                f"background-color:#f1f8f1; "
-                                f"border:1px solid #c8e6c9; "
-                                f"border-left:4px solid #2e7d32; "
-                                f"border-radius:8px; "
-                                f"padding:16px 20px; "
-                                f"color:#1a1a1a; "
-                                f"line-height:1.8;'>"
-                                f"<p style='font-size:1.43rem; font-weight:700; color:#1a1a1a; "
-                                f"letter-spacing:-0.01em; margin:0 0 10px 0;'>A.</p>"
-                                f"<span style='font-size:15px;'>{_ans_text}</span>"
-                                f"</div>",
-                                unsafe_allow_html=True,
-                            )
+                                st.markdown(
+                                    "<div style='font-size:11px; color:#aaa; margin-bottom:6px; letter-spacing:0.04em;'>AI 답변</div>",
+                                    unsafe_allow_html=True,
+                                )
+                                st.markdown(
+                                    _answer_box.format(body=_ans_text),
+                                    unsafe_allow_html=True,
+                                )
 
                     if _qa_idx < len(st.session_state.qa_history) - 1:
                         st.markdown(
