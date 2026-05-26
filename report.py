@@ -433,157 +433,125 @@ class ReportPDF(FPDF):
             os.unlink(tmp.name)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # 섹션 3 — Claude 기업 분석 (4섹션 카드)
+    # 섹션 3 — Claude 기업 분석 (앱 Claude 분석 탭과 완전 동일한 파싱+스타일)
     # ═══════════════════════════════════════════════════════════════════════════
     def draw_business_analysis(self, analysis: str):
-        sections = self._parse_analysis(analysis)  # 최대 4개
+        """앱 Claude 분석 탭과 동일한 파싱 로직 + 스타일로 렌더링."""
+        sections = self._parse_analysis(analysis)   # [(num, title, body), ...]
 
-        meta = [
-            (1, "주요 사업 영역"),
-            (2, "핵심 제품·서비스"),
-            (3, "고객 및 시장"),
-            (4, "성장 전략"),
-        ]
+        lm     = self.l_margin
+        eff    = self.eff_w
+        line_h = 5.5
+        indent = 5.5   # 텍스트 좌측 들여쓰기 (초록 바 공간)
+        pad_v  = 3.0   # 박스 상하 내부 여백 (mm)
 
-        lm  = self.l_margin
-        eff = self.eff_w
-        gap = 4.0
-        hw  = (eff - gap) / 2  # 2열 너비
+        for i, (num, title, body) in enumerate(sections):
+            if not body:
+                continue
 
-        # 2열 × 2행 레이아웃
-        for pair in range(0, min(4, len(meta)), 2):
-            left_meta  = meta[pair]
-            right_meta = meta[pair + 1] if pair + 1 < len(meta) else None
-
-            lt = sections[pair]     if pair     < len(sections) else ""
-            rt = sections[pair + 1] if pair + 1 < len(sections) else ""
-
-            lh = self._calc_card_h(lt, hw)
-            rh = self._calc_card_h(rt, hw) if right_meta else 0
-            row_h = max(lh, rh, 32)
-
-            if self.get_y() + row_h > self.h - self.b_margin:
+            # 페이지 넘김 여유 확인
+            if self.get_y() + 30 > self.h - self.b_margin:
                 self.add_page()
-            y = self.get_y()
 
-            self._draw_card(lm,            y, hw, row_h, left_meta[0],  left_meta[1],  lt)
-            if right_meta:
-                self._draw_card(lm + hw + gap, y, hw, row_h, right_meta[0], right_meta[1], rt)
+            # ── 번호 + 제목 (앱 탭과 동일: 검정 굵게) ────────────────────
+            if i > 0:
+                self.ln(8)
+            self.set_font("Pretendard", "B", 13)
+            self._tc(TEXT_COL)   # #1a1a1a
+            self.set_x(lm)
+            self.cell(0, 8, f"{num}. {title}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            self.ln(2)
 
-            self.set_y(y + row_h + gap)
+            # ── 본문: 들여쓰기 후 렌더링 → 초록 왼쪽 바 + 회색 테두리 ──
+            y_top = self.get_y()
+            self.set_font("Pretendard", "", 10.5)
+            self._tc((51, 51, 51))   # #333333
+            self.set_xy(lm + indent, y_top + pad_v)
+            self.multi_cell(eff - indent - 2, line_h, body,
+                            new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            y_bot = self.get_y() + pad_v
 
-    # ── 카드 높이 계산 ────────────────────────────────────────────────────────
-    def _calc_card_h(self, content: str, w: float) -> float:
-        pad      = 4.0
-        badge_r  = 2.5
-        title_h  = badge_r * 2 + 3.5
-        line_h   = 5.2
-        text_w   = w - pad * 2 - 1.5
+            # 초록 왼쪽 굵은 세로 선 (앱: border-left:3px solid #2e7d32)
+            self.set_draw_color(46, 125, 50)
+            self.set_line_width(1.5)
+            self.line(lm + 0.75, y_top, lm + 0.75, y_bot)
 
-        self.set_font("Pretendard", "", 10)
-        try:
-            lines   = self.multi_cell(text_w, line_h, content, dry_run=True, output="LINES")
-            n_lines = len(lines)
-        except Exception:
-            n_lines = max(1, len(content) // max(1, int(text_w / 3.0)))
+            # 회색 박스 외곽선 (앱: border:1px solid #e8e8e8)
+            self._dc((232, 232, 232))
+            self.set_line_width(0.3)
+            self.rect(lm, y_top, eff, y_bot - y_top, style="D")
 
-        return pad + title_h + n_lines * line_h + pad
-
-    # ── 카드 1개 렌더링 ───────────────────────────────────────────────────────
-    def _draw_card(self, x, y, w, h, number, title, content):
-        pad    = 4.0
-        badge_r = 2.5
-        line_h  = 5.2
-
-        self._fc(CARD_BG)
-        self._dc(BORDER)
-        self.set_line_width(0.3)
-        self.rect(x, y, w, h, style="FD")
-
-        self._fc(PRIMARY)
-        self._dc(PRIMARY)
-        self.set_line_width(0)
-        self.rect(x, y, 1.0, h, style="F")
-
-        bcx = x + pad + badge_r + 0.5
-        bcy = y + pad + badge_r
-        self._fc(PRIMARY)
-        self._dc(PRIMARY)
-        self.ellipse(bcx - badge_r, bcy - badge_r, badge_r * 2, badge_r * 2, style="F")
-        self.set_font("Pretendard", "B", 7)
-        self._tc(WHITE)
-        self.set_xy(bcx - badge_r, bcy - badge_r)
-        self.cell(badge_r * 2, badge_r * 2, str(number), align="C")
-
-        title_x = bcx + badge_r + 2.5
-        title_y = y + pad - 0.5
-        avail_w = w - (title_x - x) - pad
-        self.set_font("Pretendard", "B", 12)
-        self._tc(PRIMARY)
-        self.set_xy(title_x, title_y)
-        self.cell(avail_w, badge_r * 2, title)
-
-        content_y  = y + pad + badge_r * 2 + 3.5
-        text_x     = x + pad + 1.5
-        text_w     = w - pad * 2 - 1.5
-        max_text_h = h - (content_y - y) - pad
-
-        self.set_font("Pretendard", "", 10)
-        self._tc(TEXT_COL)
-        self.set_xy(text_x, content_y)
-
-        try:
-            all_lines = self.multi_cell(text_w, line_h, content, dry_run=True, output="LINES")
-        except Exception:
-            all_lines = content.split("\n")
-        max_lines = max(1, int(max_text_h / line_h))
-        for line in all_lines[:max_lines]:
-            if self.get_y() >= content_y + max_text_h:
-                break
-            self.set_x(text_x)
-            self.cell(text_w, line_h, line, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            self.set_y(y_bot + 6)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # Claude 분석 텍스트 파싱 → 4개 섹션
+    # Claude 분석 텍스트 파싱 — app.py _parse_sections()와 동일한 로직
     # ═══════════════════════════════════════════════════════════════════════════
+    _DEFAULT_TITLES = {
+        "1": "주요 사업 영역",
+        "2": "핵심 제품·서비스",
+        "3": "고객 및 시장",
+        "4": "성장 전략",
+    }
+
     @staticmethod
     def _strip_markdown(text: str) -> str:
-        """마크다운 기호(**, *, #) 제거"""
-        t = re.sub(r'\*+([^*\n]+)\*+', r'\1', text)
-        t = re.sub(r'#+\s*', '', t)
+        """마크다운 기호(**, *, #) 제거 — app.py _inline_html과 동일."""
+        t = re.sub(r'#+\s*', '', text)
+        t = re.sub(r'\*+([^*\n]+)\*+', r'\1', t)
         return t.strip()
 
     def _parse_analysis(self, analysis: str) -> list:
-        """분석 텍스트를 최대 4개 섹션으로 파싱."""
-        sections = [""] * 4
-        parts = re.split(r"\n(?=\d+[\.\)、]\s)", analysis)
+        """app.py의 _parse_sections()와 완전히 동일한 로직으로 파싱.
+        반환: [(num_str, title, body), ...]
+        """
+        t = re.sub(r'(?m)^#+\s+.+\n?', '', analysis.strip()).strip()
+        t = re.sub(r'\*+([^*\n]+)\*+', r'\1', t)
+        t = re.sub(r'#+', '', t)
 
-        if len(parts) >= 2:
-            for i, p in enumerate(parts[:4]):
-                body = re.sub(r"^\d+[\.\)、]\s.*?\n", "", p, count=1).strip()
-                sections[i] = self._strip_markdown(body or p.strip())
-            return sections
+        raw = re.split(r'(?m)^\s*(\d+)\.\s+', t)
+        sections = []
+        i = 1
+        while i + 1 < len(raw):
+            num     = raw[i].strip()
+            content = raw[i + 1].strip()
+            lines   = content.split('\n', 1)
+            first   = lines[0].strip()
+            rest    = lines[1].strip() if len(lines) > 1 else ''
 
-        # 키워드 기반 fallback
-        kw_map = [
-            ["주요 사업", "사업 영역"],
-            ["핵심 제품", "제품", "서비스"],
-            ["고객", "시장"],
-            ["성장 전략", "전략"],
-        ]
-        cur = -1
-        for line in analysis.split("\n"):
-            for idx, keys in enumerate(kw_map):
-                if any(k in line for k in keys):
-                    cur = idx
-                    break
-            if cur >= 0:
-                sections[cur] += line + "\n"
+            if ':' in first:
+                ci   = first.index(':')
+                cand = first[:ci].strip()
+                if len(cand) <= 35:
+                    title = cand
+                    body  = (first[ci + 1:].strip() + ('\n' + rest if rest else '')).strip()
+                else:
+                    title = self._DEFAULT_TITLES.get(num, f"항목 {num}")
+                    body  = content
+            else:
+                if len(first) > 40:
+                    title = self._DEFAULT_TITLES.get(num, f"항목 {num}")
+                    body  = content
+                else:
+                    title, body = first, rest
 
-        if all(s == "" for s in sections):
-            sections[0] = analysis
+            # body가 비면 title을 body로 내리고 기본 제목 사용
+            if not body.strip() and title:
+                body  = title
+                title = self._DEFAULT_TITLES.get(num, f"항목 {num}")
 
-        return [self._strip_markdown(s.strip()) for s in sections]
+            # body 앞머리의 "제목:" 중복 레이블 제거
+            _dup = re.compile(r'^' + re.escape(title) + r'\s*:\s*', re.IGNORECASE)
+            body = _dup.sub('', body.lstrip(), count=1).strip()
+
+            sections.append((num, title, self._strip_markdown(body)))
+            i += 2
+
+        # fallback: 파싱 실패 시 전체 텍스트를 1번 항목으로
+        if not sections:
+            clean = self._strip_markdown(analysis)
+            sections = [("1", self._DEFAULT_TITLES.get("1", "분석 내용"), clean)]
+
+        return sections
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
