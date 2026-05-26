@@ -1606,10 +1606,11 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
                                 """컬럼명에 따라 값 포맷 결정."""
                                 try:
                                     _fv = float(val)
-                                    if any(k in col for k in ["액", "이익", "원가", "비용", "판관비"]):
-                                        return f"{_fv:,.0f}원"
-                                    elif any(k in col for k in ["율", "률", "성장"]):
+                                    # % 키워드를 먼저 검사 — "영업이익률"처럼 "이익"+"률" 동시 포함 시 %로 처리
+                                    if any(k in col for k in ["율", "률", "성장"]):
                                         return f"{_fv:.2f}%"
+                                    elif any(k in col for k in ["액", "이익", "원가", "비용", "판관비"]):
+                                        return f"{_fv:,.0f}원"
                                     else:
                                         return f"{_fv:,.0f}"
                                 except (ValueError, TypeError):
