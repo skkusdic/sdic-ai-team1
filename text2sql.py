@@ -116,7 +116,7 @@ def _generate_sql(query: str, company: str) -> str:
 
 
 def _analysis_fallback(query: str, company: str) -> str | None:
-    """DB 전체 데이터를 컨텍스트로 Claude에게 분석형 질문 답변 생성. 실패 시 None."""
+    """DB 재무 데이터 + 웹 뉴스 컨텍스트로 Claude 분석 답변 생성. 실패 시 None."""
     safe = company.replace("'", "''")
     fallback_sql = (
         f"SELECT year, 매출액, 영업이익, 순이익, 매출원가, 매출총이익, 판관비 "
@@ -127,19 +127,34 @@ def _analysis_fallback(query: str, company: str) -> str | None:
         if not rows:
             return None
         df = pd.DataFrame(rows, columns=cols)
-        # 영업이익률 파생 컬럼 추가
         df["영업이익률(%)"] = df.apply(
             lambda r: round(float(r["영업이익"]) * 100.0 / float(r["매출액"]), 2)
             if r["매출액"] else None,
             axis=1,
         )
-        context = df.to_string(index=False)
-        return ask(
-            f"{company}의 연도별 재무 데이터 (단위: 백만원):\n\n{context}\n\n"
-            f"위 데이터를 근거로 다음 질문에 답하세요:\n{query}\n\n"
-            "구체적 연도·수치를 인용하며 한국어로 간결하게 답하세요.",
-            max_tokens=500,
-        ).strip()
+        fin_context = df.to_string(index=False)
+
+        # 웹 뉴스 검색 — 실패해도 재무 데이터만으로 답변
+        news_section = ""
+        try:
+            from data import search_company_news
+            snippets = search_company_news(company, max_results=5)
+            if snippets:
+                news_section = (
+                    "\n\n[최근 관련 뉴스 검색 결과]\n"
+                    + "\n".join(f"- {s}" for s in snippets)
+                )
+        except Exception:
+            pass
+
+        prompt = (
+            f"{company}의 연도별 재무 데이터 (단위: 백만원):\n\n{fin_context}"
+            f"{news_section}\n\n"
+            f"위 재무 데이터와 뉴스를 함께 참고해 다음 질문에 답하세요:\n{query}\n\n"
+            "재무 수치(연도·금액·비율)와 실제 사건·이벤트·업황을 연결해 "
+            "한국어로 구체적으로 설명하세요."
+        )
+        return ask(prompt, max_tokens=600).strip()
     except Exception:
         return None
 

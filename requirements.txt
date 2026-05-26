@@ -11,3 +11,4 @@ numpy
 beautifulsoup4
 finance-datareader
 kaleido==0.2.1
+duckduckgo-search

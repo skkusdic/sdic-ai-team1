@@ -266,6 +266,34 @@ def get_financials(company_name: str) -> dict:
     return raw
 
 
+# ── 웹 뉴스 검색 ────────────────────────────────────────────────────────────
+
+def search_company_news(company: str, extra_keywords: str = "", max_results: int = 5) -> list[str]:
+    """
+    DuckDuckGo로 기업 관련 최신 뉴스 헤드라인·요약 검색.
+    API 키 불필요. 실패 시 빈 리스트 반환.
+    반환: ["[날짜] 제목: 요약", ...]
+    """
+    try:
+        from duckduckgo_search import DDGS
+        from bs4 import BeautifulSoup as _BS
+
+        query = f"{company} {extra_keywords}".strip() if extra_keywords else f"{company} 실적 사업 이슈"
+        with DDGS() as ddgs:
+            raw = list(ddgs.news(query, max_results=max_results, region="kr-kr"))
+
+        snippets: list[str] = []
+        for r in raw:
+            title = _BS(r.get("title", ""), "html.parser").get_text().strip()
+            body  = _BS(r.get("body",  ""), "html.parser").get_text().strip()[:200]
+            date  = r.get("date", "")[:10]   # YYYY-MM-DD
+            if title:
+                snippets.append(f"[{date}] {title}" + (f": {body}" if body else ""))
+        return snippets
+    except Exception:
+        return []
+
+
 # ── 사업보고서 원문 텍스트 추출 ────────────────────────────────────────────
 
 def _html_to_text(html: str) -> str:
