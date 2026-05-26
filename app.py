@@ -1604,8 +1604,13 @@ if "final_state" in st.session_state and st.session_state.final_state is not Non
 
                             def _fmt_val(col, val):
                                 """컬럼명에 따라 값 포맷 결정."""
+                                import math as _math
+                                if val is None:
+                                    return "-"
                                 try:
                                     _fv = float(val)
+                                    if _math.isnan(_fv):
+                                        return "-"
                                     # 연도 컬럼 — 쉼표 없이 정수 그대로
                                     if col.lower() in ("year", "연도"):
                                         return str(int(_fv))

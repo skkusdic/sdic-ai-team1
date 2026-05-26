@@ -101,7 +101,7 @@ def save_financials(company_name: str, financials: dict):
             con.execute(
                 """
                 INSERT INTO financials (corp_name, year, 매출액, 영업이익, 순이익, 매출원가, 매출총이익, 판관비, data_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 3)
                 ON CONFLICT(corp_name, year) DO UPDATE SET
                     매출액       = excluded.매출액,
                     영업이익     = excluded.영업이익,
@@ -109,7 +109,7 @@ def save_financials(company_name: str, financials: dict):
                     매출원가     = COALESCE(excluded.매출원가,   financials.매출원가),
                     매출총이익   = COALESCE(excluded.매출총이익, financials.매출총이익),
                     판관비       = COALESCE(excluded.판관비,     financials.판관비),
-                    data_version = 2
+                    data_version = 3
                 """,
                 (
                     company_name,
@@ -134,8 +134,8 @@ def load_financials(company_name: str) -> dict | None:
         ).fetchall()
     if not rows:
         return None
-    # data_version < 2 = CFS 기반 구버전 → None 반환해서 DART 재수집 유도
-    if any((row[7] or 0) < 2 for row in rows):
+    # data_version < 3 = 선택 컬럼 CFS 보완 이전 구버전 → None 반환해서 DART 재수집 유도
+    if any((row[7] or 0) < 3 for row in rows):
         return None
     result = {}
     for year, rev, op, net, cogs, gross, sga, _ in rows:

@@ -183,11 +183,15 @@ def _fetch_from_dart(company_name: str) -> dict:
     if not corp_code:
         return {}
 
+    _optional = {"매출원가", "매출총이익", "판관비"}
     result = {}
     for year in range(2021, 2026):
         year_data = _extract_year(corp_code, year, "OFS")  # 별도 우선 (DART 기본 표시 기준)
-        if not year_data or not {"매출액", "영업이익", "순이익"}.issubset(year_data):
-            cfs = _extract_year(corp_code, year, "CFS")    # 별도 없으면 연결 fallback
+        # 필수 컬럼 부족 또는 선택 컬럼 하나라도 없으면 CFS로 보완
+        if (not year_data
+                or not {"매출액", "영업이익", "순이익"}.issubset(year_data)
+                or not _optional.issubset(year_data)):
+            cfs = _extract_year(corp_code, year, "CFS")
             for k, v in cfs.items():
                 year_data.setdefault(k, v)
         if {"매출액", "영업이익", "순이익"}.issubset(year_data):
