@@ -69,14 +69,13 @@ def _find_corp_code(company_name: str) -> str:
             name = name.replace(suffix, "")
         return name.strip()
 
-    korean_only = _korean_part(raw)
-    candidates = list(dict.fromkeys([
-        normalized, raw,
-        _strip_suffix(normalized), _strip_suffix(raw),
-        normalized.replace(" ", ""), raw.replace(" ", ""),
-        _strip_suffix(normalized).replace(" ", ""),
-        korean_only,
-    ]))
+    def _build_candidates(*names) -> list:
+        out = []
+        for n in names:
+            out += [n, _strip_suffix(n), n.replace(" ", ""), _strip_suffix(n).replace(" ", "")]
+        return list(dict.fromkeys(out))
+
+    candidates = _build_candidates(normalized, raw, _korean_part(raw))
 
     for cand in candidates:
         results = corp_list.find_by_corp_name(cand, exactly=True) or []
@@ -86,12 +85,38 @@ def _find_corp_code(company_name: str) -> str:
         if results:
             return results[0].corp_code
 
+    # 정확 일치 실패 — 한국어 약칭도 Claude로 DART 공식명 변환 시도
+    # (예: "현대차" → "현대자동차", "기아차" → "기아")
+    if not _has_english(raw):
+        try:
+            official = ask(
+                f"'{raw}'의 DART(금융감독원 전자공시시스템) 등록 정식 회사명을 한국어로만 답하세요.\n"
+                "회사명만 출력하세요. 예시: '현대자동차', 'LG전자', '삼성전자'",
+                max_tokens=30,
+            ).strip()
+            if official and official != raw and any("가" <= c <= "힣" for c in official):
+                for cand in _build_candidates(official):
+                    results = corp_list.find_by_corp_name(cand, exactly=True) or []
+                    listed = [r for r in results if r.stock_code]
+                    if listed:
+                        return listed[0].corp_code
+                    if results:
+                        return results[0].corp_code
+                # 공식명도 후보에 추가해 부분 검색에 활용
+                candidates = _build_candidates(normalized, raw, _korean_part(raw), official)
+        except Exception:
+            pass
+
     for cand in candidates:
         results = corp_list.find_by_corp_name(cand, exactly=False) or []
         listed = [r for r in results if r.stock_code]
         pool = listed if listed else results
         if pool:
-            return min(pool, key=lambda r: len(r.corp_name)).corp_code
+            # 쿼리 문자열로 시작하는 상장사 우선 — "LG" 검색 시 "㈜LG"(지주사)보다
+            # "LG전자"가 먼저 선택되도록 방지
+            starts = [r for r in pool if r.corp_name.startswith(cand)]
+            target = starts if starts else pool
+            return min(target, key=lambda r: len(r.corp_name)).corp_code
 
     return ""
 
