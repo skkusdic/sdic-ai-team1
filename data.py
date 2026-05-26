@@ -408,6 +408,10 @@ def _find_corp_obj(company_name: str):
     corp_list = _get_corp_list()
     raw = company_name.strip()
 
+    # 별칭 사전 우선 적용 (_find_corp_code 와 동일 로직)
+    if raw in _DART_ALIAS:
+        raw = _DART_ALIAS[raw]
+
     def _exact(name: str):
         for cand in [name, name.replace(" ", "")]:
             results = corp_list.find_by_corp_name(cand, exactly=True) or []
