@@ -61,9 +61,22 @@ def _normalize_name(company_name: str) -> str:
     return result
 
 
+# DART 공식명이 영문인 회사: 한국어 입력 → 영문 DART명 사전
+_DART_ALIAS = {
+    "네이버": "NAVER",
+    "카카오뱅크": "카카오뱅크",   # 이미 한국어 — 이건 그대로
+    "에스케이하이닉스": "SK하이닉스",
+}
+
+
 def _find_corp_code(company_name: str) -> str:
     corp_list = _get_corp_list()
     raw = company_name.strip()
+
+    # 별칭 사전 우선 적용 (DART 공식명이 영문인 케이스 대응)
+    if raw in _DART_ALIAS:
+        raw = _DART_ALIAS[raw]
+
     normalized = _normalize_name(raw)
 
     def _strip_suffix(name: str) -> str:
@@ -88,7 +101,7 @@ def _find_corp_code(company_name: str) -> str:
             return results[0].corp_code
 
     # 정확 일치 실패 — 한국어 약칭도 Claude로 DART 공식명 변환 시도
-    # (예: "현대차" → "현대자동차", "기아차" → "기아")
+    # (예: "현대차" → "현대자동차", "기아차" → "기아", "네이버" → "NAVER")
     if not _has_english(raw):
         try:
             official = ask(
@@ -96,7 +109,7 @@ def _find_corp_code(company_name: str) -> str:
                 "회사명만 출력하세요. 예시: '현대자동차', 'LG전자', '삼성전자'",
                 max_tokens=30,
             ).strip()
-            if official and official != raw and any("가" <= c <= "힣" for c in official):
+            if official and official != raw and any("가" <= c <= "힣" for c in official) and len(official) < 25:
                 for cand in _build_candidates(official):
                     results = corp_list.find_by_corp_name(cand, exactly=True) or []
                     listed = [r for r in results if r.stock_code]
